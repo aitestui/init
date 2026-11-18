@@ -1,0 +1,11 @@
+{
+  "$schema": "https://skills.sh/schemas/skills.sh.schema.json",
+  "notGrouped": "bottom",
+  "groupings": [
+    {
+      "title": "aitestui 接入自动化",
+      "description": "降低新系统接入 aitestui 的冷启动工作量：从系统手册自动生成可跑通的基线测试用例。",
+      "skills": ["aitestui"]
+    }
+  ]
+}
