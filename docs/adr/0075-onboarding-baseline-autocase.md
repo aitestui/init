@@ -2,7 +2,7 @@
 
 - Status: **Accepted**（grill-with-docs 定案，2026-11-18；三轮 grill 收敛，前沿已空）
 - Date: 2026-11-18
-- Applies to: 项目级 skill `.workbuddy/skills/aitestui-onboarding-autocase/`（SKILL.md + references + scripts）；不改 `api-h5qa` / `fe_aitestui` / `runner` 任何代码
+- Applies to: 全局（用户级）skill `~/.workbuddy/skills/aitestui/`（SKILL.md + references + scripts，本地名与对外发布名统一为 `aitestui`）；不改 `api-h5qa` / `fe_aitestui` / `runner` 任何代码。原为项目级 skill，2026-11-18 移至全局——本 skill 用于测试**其他**项目，绑在 h5qa 项目目录会限制其适用范围
 - Related: ADR-0063（纯自然语言执行）、ADR-0070（导入导出端点回退恢复）、ADR-0033（7 列往返模板）、ADR-0039（会话凭据）、ADR-0052（约定变量）
 - Terminology: `docs/glossary-onboarding-baseline.md`（本文不重复定义术语）
 
@@ -26,7 +26,7 @@
 
 ## Decision
 
-**D1 能力放平台外，不改 aitestui 代码**：生成、探索、执行环节全部在独立 skill 内完成；写入只调现有 API。用户明确「需要改造的先记录，最后统一添加」——本 ADR 把一个独立的平台改造清单（聚合初始化端点、文档上传 UI、保密变量 API 写入）记入 `changes.md` 作为未来统一开发的输入，本期一律不动平台。
+**D1 能力放平台外，不改 aitestui 代码**：生成、编排、归因全部在独立 skill 内完成；写入只调现有 API。用户明确「需要改造的先记录，最后统一添加」——需要改造的点记入 `changes.md`，本期一律不动平台。（早期把「保密变量 API 写入」列为改造点，2026-11-19 经源码核实该能力**已存在**，已移出改造清单，见 D9。）
 
 **D2 全程包办（用户 Q1=C）**：skill 不只产出用例文件，而是「文档 → 登录 → 实地探索 → 生成 → 本地自执行 → 改到全过 → 灌回平台」全链路闭环。否决「只产出 XLSX 让用户自己导入」的理由：那仍需用户手工跑通与修用例，没解决冷启动工作量。
 
@@ -42,6 +42,8 @@
 
 **D8 灌库覆盖语义须显式确认**：`/test-cases/import` 按 code 覆盖（局部覆盖、空列不碰、format 不可变），反复导入会更新平台内容。首次接入前向用户确认目标项目为空或接受覆盖。
 
+**D9 skill 只指挥平台、不自己干活（2026-11-19 用户真实试跑纠正，推翻 D3 与 D6）**：打开被测站点、登录、识别验证码、点按钮、判定、出报告**全是平台 runner 执行用例时做的**，skill 只调平台 API + 生成/改用例 + 按日志归因。据此：①平台身份用用户给的 PAT 走 Bearer 直调（源码证实 `machine` 令牌只在 Cookie 通道被禁），不引导浏览器登录平台——推翻 D2/D3 里"浏览器登录取 token"的做法；②被测系统登录态通过 `PUT /project-env-vars/edit`（`type:'secret'`，源码证实支持加密落库）写入平台 secret 变量，不自己开浏览器登录、不识别验证码、不导出 `storageState`——推翻 D3；③生成由 skill 自身 LLM 完成、执行用平台默认模型，不配外部模型槽位——推翻 D6；④入口/文案/登录态的有效性一律由**平台执行结果 + 日志**证明，文档落后按日志改用例。用户给的账密/令牌只进平台 secret 变量，不进 skill 产物、不回显。
+
 ## Consequences
 
 - **收益**：新系统接入从「逐条手写 + 反复调试」降为「给文档 + 两次登录 + 人工确认」，直接命中平台最大的冷启动痛点。
@@ -53,4 +55,9 @@
 
 ## 实施记录
 
-- 2026-11-18：产出项目级 skill `.workbuddy/skills/aitestui-onboarding-autocase/`（SKILL.md、references/api-contract.md、references/case-rules.md、scripts/case-lint.mjs）；本 ADR 与新术语表同批落地。skill 尚未在真实系统上跑通过，首次使用按 SKILL.md 的阶段门禁执行并回填验收结果。
+- 2026-11-18：产出 skill（SKILL.md、references/api-contract.md、references/case-rules.md、scripts/case-lint.mjs）；本 ADR 与新术语表同批落地。skill 尚未在真实系统上跑通过，首次使用按 SKILL.md 的阶段门禁执行并回填验收结果。
+- 2026-11-18（同日修订）：skill 从项目级 `.workbuddy/skills/` **移至全局用户级 `~/.workbuddy/skills/aitestui/`**——用途是用 h5qa 平台接入/测试其他项目，留在 h5qa 项目目录会限制适用范围。同时对 SKILL.md 做了两处实质修订：①「运行前必读」改为自包含（去掉对本私仓 `grillme/docs`、`aitestui-user-manual.md` 的路径引用），使脱离 h5qa 仓库也能执行；②交互极简化（见下条实施记录）。本地名与对外发布名统一为 `aitestui`（GitHub 仓库 + 官网 zip），旧名 `aitestui-onboarding-autocase` 已停用。
+- 2026-11-18（16:38 修订）：统一三处副本——发布仓 `~/code/init/skills/aitestui/`、WorkBuddy 全局 `~/.workbuddy/skills/aitestui/`、`npx skills` 安装目录 `~/.agents/skills/aitestui/` 全部同步为发布仓最新版。此前 `~/.agents` 那份停留在最早版本（仍索要 TOKEN 与模型配置），是用户看到说明前后矛盾的根源；WorkBuddy 会话在启动时固化技能列表，改名后须新开会话才能用 `/aitestui`。
+- 2026-11-18（16:38 补充）：查明 `npx skills add` 对 WorkBuddy **不生效**——该 CLI 的受支持 agent 列表里根本没有 WorkBuddy（只有名字相近的 CodeBuddy，落在 `~/.codebuddy/skills/`），全局安装实际写入 `~/.agents/skills/`，而 WorkBuddy 只扫描 `~/.workbuddy/skills/`。故 push 到 GitHub 也无法让 `npx skills add` 对 WorkBuddy 用户生效；国内分发应走官网 zip → 手动放到 `~/.workbuddy/skills/aitestui/`（或在 WorkBuddy 内让 AI 直接写入该目录）。
+- 2026-11-19：按用户期望的调用方式改造 skill——支持**一句话带齐参数**（文档/站点/环境名/项目名/数量/层级/登录凭据），AI 自行解析，不逐项追问。按 name/key 复用已有项目与环境；数量/层级收敛生成与执行范围（「10 条核心」只做核心层 10 条，跳过三批门禁），缺省才三批全量。
+- 2026-11-19（**方向性纠正，推翻上一条的凭据双轨**）：用户真实试跑时指出 skill 跑去「开浏览器看登录方式 → 识别图形验证码 → 写等待验证码脚本」，完全跑偏。**立 D9（见下）**：skill 不自己干活，只指挥 aitestui 干活——打开页面/登录/断言/出报告全是平台 runner 执行用例时做的。据此重写 SKILL.md：①鉴权改为**用户给的平台 PAT（h5qa_…）Bearer 直调全部 API**，不引导浏览器登录平台（源码 `access-token-auth.guard.ts` 证实 machine 令牌只在 Cookie 通道被禁，Bearer 可用）；②被测系统登录态通过 **`PUT /project-env-vars/edit`（type=secret）写入平台 secret 变量**——**推翻"保密变量 API 写不了"的旧结论**：源码 `project-env-vars.service.ts` 的 add/edit 明确支持 secret 加密落库，只有 batch 拒绝；故删掉"浏览器自动登录/识别验证码/实地走查/前端代填"整套错误路径；③入口/文案对不对、登录态是否有效一律由**平台执行结果 + 日志**来证明，文档落后按日志改用例。三处副本 + 官网 zip 已同步，FFFD=0。

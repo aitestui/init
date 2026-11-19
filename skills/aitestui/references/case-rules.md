@@ -2,9 +2,9 @@
 
 ## 平台现行真相（勿凭记忆）
 
-- 平台只执行**自然语言（prompt）用例**：库里只存 `promptContent`，`format` / `script_content` / `self_heal_enabled` 等字段仅供往返存档、执行链不读，不存在 YAML 用例与用例级自愈（ADR-0063）。
-- 用例导入导出端点**现行有效**：`POST /test-cases/import` 收纯 JSON 7 列用例（ADR-0033；曾被 ADR-0063 下线，已由 ADR-0070 整体回退恢复）。详见 `references/api-contract.md`。
-- 若发现平台源码或文档与本段冲突，以本段与 `docs/adr/0075` 为准。
+- 平台只执行**自然语言（prompt）用例**：库里只存 `promptContent`，`format` / `script_content` / `self_heal_enabled` 等字段仅供往返存档、执行链不读，不存在 YAML 用例与用例级自愈。
+- 用例导入导出端点**现行有效**：`POST /test-cases/import` 收纯 JSON 7 列用例。详见 `references/api-contract.md`。
+- 若发现平台源码或文档与本段冲突，以本段为准。
 
 ## 10 条硬约束（aitestui 用户手册 §6.2）
 

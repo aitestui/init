@@ -2,14 +2,14 @@
 
 > grill-with-docs 的 domain-modeling 产物，范围限定在**「从系统手册自动生成一套能跑通的基线用例、帮新系统降低接入 aitestui 的冷启动成本」**这一子域。
 > 产品级语义仍以 `CONTEXT.md` 为权威；用例编写规范见 `aitestui-user-manual.md` §6.2；执行模型术语见 `docs/glossary-execution-model.md`；模型与计费见 `docs/glossary.md`。
-> 全部裁决见 `docs/adr/0075-onboarding-baseline-autocase.md`（Status: Accepted）。承载物是项目级 skill `.workbuddy/skills/aitestui-onboarding-autocase/`。
+> 全部裁决见 `docs/adr/0075-onboarding-baseline-autocase.md`（Status: Accepted）。承载物是全局（用户级）skill `~/.workbuddy/skills/aitestui/`。
 
 ## 概念
 
 | 中文 | English | 定义 | 载体 |
 |---|---|---|---|
 | 接入基线用例集 | Onboarding Baseline Case Set | 为被测系统**首次接入** aitestui 生成的第一批、覆盖主干、可直接执行的自然语言用例。目的不是发现缺陷，而是让新系统开箱即可跑。 | `output/<run>/pool.json` / `pool.xlsx`；灌入 `qa_test_case` |
-| 接入基线用例自动生成 | Onboarding Baseline Autocase | 本域能力：文档 → 人工辅助登录 → AI 实地探索 → 生成三批用例 → 本地自执行并按真实行为改用例到全过 → 灌回平台，全链路闭环。 | 项目级 skill `aitestui-onboarding-autocase` |
+| 接入基线用例自动生成 | Onboarding Baseline Autocase | 本域能力：文档 → 人工辅助登录 → AI 实地探索 → 生成三批用例 → 平台执行并按真实行为改用例到全过，全链路闭环。 | 全局（用户级）skill `aitestui`，位于 `~/.workbuddy/skills/`（本地名与对外发布名一致；旧名 `aitestui-onboarding-autocase` 已停用） |
 | 实地探索 | Field Exploration | 带着登录态在真实浏览器里走查功能点，确认入口路径与可见文案、修正文档缺漏的过程。是「文档落后」能够被识别的前提。 | skill 阶段 3；Playwright + storageState |
 | 文档落后 | Stale Document | 手册描述与被测系统实际行为不符。遇到失败时的**首选归因之一**，处理是按系统实际行为改用例，并把差异记入变更清单，绝不判系统 bug。 | `changes.md` 的「文档差异」节 |
 | 三批分层 | Three-tier Layering | 同一用例集按标签形成的三个筛选视图：冒烟 ⊂ 核心 ⊂ 全量（全量 = 核心 ∪ 负向）。是视图，不是三份独立用例。 | `tags`：`冒烟` / `核心` / `负向` |

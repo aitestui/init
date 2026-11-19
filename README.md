@@ -7,13 +7,41 @@
 
 ## 安装
 
+### 国内用户（推荐，不依赖 GitHub）
+
+```bash
+npx skills add https://aitestui.com/skills/aitestui.zip
+```
+
+这是最简便的方式：安装包放在 aitestui 官网静态目录下，全程不走 GitHub。`npx skills add <URL>` 支持直接下载 zip/tar.gz 并解压安装（已实测）。若 `npx` 拉包慢，先配 npm 镜像：`npm config set registry https://registry.npmmirror.com`。
+
+### 海外 / 可直连 GitHub
+
 ```bash
 npx skills add aitestui/init
 ```
 
-> `npx skills add` 的 source 必须是 `owner/repo`；裸名 `aitestui` 不作为独立 package 解析，请用上面的完整形式。安装到全局加 `-g`，指定 agent 加 `-a <agent>`。
+> `npx skills add` 的 GitHub source 必须是 `owner/repo`，裸名 `aitestui` 不作为独立 package 解析。安装到全局加 `-g`，指定 agent 加 `-a <agent>`。
+
+国内若坚持用 GitHub 仓库源，可配 git 镜像改写（CLI 的 git 子进程会继承）：
+```bash
+git config --global url."https://gitclone.com/".insteadOf "https://github.com/"
+npx skills add aitestui/init
+git config --global --unset url."https://gitclone.com/".insteadOf
+```
+镜像站会变动，公益镜像**勿带任何 token/cookie**；已有代理（VPN/Clash 或 `HTTPS_PROXY`）则无需改写。
 
 安装后在 agent 里用 `/aitestui` 调用，或说「根据这份文档帮我生成 aitestui 初始化测试用例」。
+
+### zip 包从哪来 / 怎么更新
+
+zip 由发布仓库 `skills/aitestui/` 打包而成，放在本项目前端静态目录 `fe_aitestui/public/skills/aitestui.zip`，随前端构建发布到 `https://aitestui.com/skills/aitestui.zip`。**更新 skill 后必须同时推 GitHub 仓库并重新生成官网 zip**，否则官网安装到的是旧版。生成 zip：
+
+```bash
+bash scripts/build-web-zip.sh /Users/yfj/code/h5qa/fe_aitestui/public/skills
+```
+
+脚本会把 `skills/aitestui/` 打成顶层 `aitestui/` 目录的 zip（CLI 要求的结构），并排除 `.auth`/`output` 等本地运行产物。
 
 ## 它能做什么
 
