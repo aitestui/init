@@ -95,7 +95,7 @@ runner 从平台拿模型配置。**触发执行时不传 `modelRef`，走平台
 
 **绝不需要**：开浏览器登录平台、识别验证码、在平台前端代填。这些都基于过时的"保密变量 API 写不了"的错误结论——那是错的。复用已有项目/环境时**不清空已有配置**，变量写入只覆盖本次用户明确给的那几行；导入用例是覆盖语义（见下）。
 
-## 灌入用例（阶段 6）
+## 灌入用例（阶段 4）
 
 `POST /test-cases/import`，**纯 JSON**，单批上限 500：
 
@@ -108,7 +108,7 @@ runner 从平台拿模型配置。**触发执行时不传 `modelRef`，走平台
       "code": "SMOKE_CART_CHECKOUT",
       "name": "购物车结算下单",
       "format": "prompt",
-      "tags": "冒烟,核心",
+      "tags": ["冒烟", "核心"],
       "selfHealEnabled": 1,
       "promptContent": "购物车结算下单\n1. 打开 /cart\n...\n断言：页面出现「下单成功」文案",
       "scriptContent": ""
@@ -117,11 +117,26 @@ runner 从平台拿模型配置。**触发执行时不传 `modelRef`，走平台
 }
 ```
 
+**字段类型（照抄，别凭印象拼）**——类型错了整批会被 422 拒掉，`items` 里的类型错误尤其隐蔽：
+
+| 字段 | 类型 | 约束 |
+|---|---|---|
+| `projectId` / `branchId` | **number** | 必须是查项目/分支接口返回的 `id`，不能传名字、字符串 id 或环境名 |
+| `items` | array | 单批 ≤ 500 |
+| `code` | string | `^[A-Z][A-Z0-9_]{1,127}$`；不合规进 `failed[]` |
+| `name` | string | ≤ 512 字符；留空表示不改动该列 |
+| `format` | string | `prompt` / `yaml` / `code`，本 skill 恒用 `prompt` |
+| `tags` | **string[]** | **必须是数组**，如 `["冒烟","核心"]`；单个 ≤ 64 字符、≤ 20 个。传 `"冒烟,核心"` 这种逗号字符串会被 `isArray` 判失败 |
+| `selfHealEnabled` | number | `0` 或 `1`，不是字符串 `"1"`、不是布尔 |
+| `promptContent` / `scriptContent` | string | 各 ≤ 256 KiB；自然语言全文放 `promptContent` |
+
 - 列为**驼峰**（`selfHealEnabled`/`promptContent`/`scriptContent`），不是下划线。
 - 自然语言全文放 `promptContent`；非 prompt 格式仅作存档、runner 不读。
 - `code`：trim → 非 `[A-Z0-9_]` 转 `_` → 大写，须匹配 `^[A-Z][A-Z0-9_]{1,127}$`；不合规进 `failed[]`。建议 skill 直接生成合规码。
+- **XLSX 往返模板与 JSON 不是一回事**：表格里的 `tags` 单元格是 `"冒烟,核心"` 文本，平台前端会切成数组；本 skill 直接 POST 的 JSON **没有这一步转换**，必须自己给数组。生成 `pool.json` 后跑 `case-lint.mjs`，它会拦下字符串 tags。
 - **冲突语义 = 覆盖**：命中即局部覆盖（空列不碰、format 不可变），未命中新建。反复导入会更新平台已有内容——首次接入确认目标项目是空的或用户接受覆盖。新建行 `selfHealEnabled` 默认 0，要勾选需显式传 `1`。
-- 返回 `created/updated/unchanged/failed/warnings`，导入后逐一核对。
+- 返回 `created/updated/unchanged/failed/warnings`，导入后逐一核对。`failed[]` 每行带行号和原因，按它改用例再重导。
+- 载荷不合规时平台返回 422 并在 `message` 里给出具体字段（如 `tags must be an array`）；**按 message 定位字段自修，不要原样重试**。
 - 另一通道 `POST /test-cases/import-zip`（一案一文件）本 skill 不用。
 
 ## 用例生成（无需外部模型配置）
@@ -132,4 +147,6 @@ runner 从平台拿模型配置。**触发执行时不传 `modelRef`，走平台
 
 - 「一个端点完成全部初始化」的聚合接口 —— 目前只能串多个现有端点。
 - 平台内的「上传文档→生成用例」UI 入口 —— 目前生成只能在平台外（本 skill）。
-- 保密变量经 API 写入 —— 目前只能前端手填。
+- 导入接口回传 caseId —— 目前只回计数，需要按 code 反查。
+
+保密变量经 API 写入**已经支持**（用单条 `add`/`edit` 带 `type:'secret'`），不再列入待改造项；`batch` 仍然不支持 secret，别把两者混为一谈。

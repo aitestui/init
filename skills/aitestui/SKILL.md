@@ -97,7 +97,7 @@ Content-Type: application/json
 
 - `format='prompt'`，自然语言全文放 `promptContent`，严格套用 `references/case-rules.md` 的 10 条硬约束；
 - `code` 由标题生成稳定大写编码（`^[A-Z][A-Z0-9_]{1,127}$`）；
-- `tags` 打 `冒烟`/`核心`/`负向` 分层标签（三批是同一池的筛选视图：冒烟 ⊂ 核心 ⊂ 全量）；
+- `tags` 是**字符串数组**，如 `["冒烟","核心"]`，打 `冒烟`/`核心`/`负向` 分层标签（三批是同一池的筛选视图：冒烟 ⊂ 核心 ⊂ 全量）。**不要写成 `"冒烟,核心"` 逗号字符串**——那是 XLSX 模板单元格的格式，平台前端会自动切分，而本 skill 直接 POST 的 JSON 不会，传字符串会被导入接口拒绝；
 - **登录处理**：阶段 2 已配好登录态变量时，按手册规则"配了 COOKIE 免登录就不写登录步骤"；只有账号密码时，需要登录的用例写 `输入 ${USERNAME}` / `输入 ${PASSWORD}` 占位步骤；
 - **入口只写 `/path`**，不写域名（域名在 `URL` 变量里）；负向用例断言写「系统正确拒绝/提示」。
 
@@ -105,8 +105,10 @@ Content-Type: application/json
 
 ### 阶段 4 — 导入平台（先导入才能执行）
 
-用 `POST /test-cases/import` 把当前批次用例批量导入项目 + `branchId`（纯 JSON、驼峰列，细节见 api-contract）。
+用 `POST /test-cases/import` 把当前批次用例批量导入项目 + `branchId`（纯 JSON、驼峰列，字段类型表见 api-contract）。
+- 发请求前逐项对表：`projectId`/`branchId` 是查回来的**数字 id**（不是名字/字符串），`items[].tags` 是**字符串数组**，`selfHealEnabled` 是数字 `0|1`。类型错了整批会被 422 拒掉，别原样重试。
 - code 冲突语义是**覆盖**（空列不碰、format 不可变）；复用已有项目时首次接入前确认目标为空或用户接受覆盖。核对返回 `created/updated/unchanged/failed`。
+- 导入失败（422 或 `failed[]` 非空）时，按 `message` / 行内原因定位到具体字段改 `pool.json` 再重导；**看不出原因就停下报告用户，不要盲目重跑**。
 - 导入只回计数、**不回 caseId**。用 `GET /test-cases/index?projectId=&branchId=&code=<精确编码>` 逐条查回 `id`，建 `code → caseId` 映射存 `output/<run>/case-ids.json`。
 
 ### 阶段 5 — 平台执行 + 读日志 + 改用例到全过（核心闭环）

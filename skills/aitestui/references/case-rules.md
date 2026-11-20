@@ -23,13 +23,17 @@
 
 ## 分层标签
 
+`tags` 在 `pool.json` 里是**字符串数组**（如 `["冒烟","核心"]`），不是逗号分隔的字符串。
+
 - `冒烟`：主链路最小集，一次登录后的核心可见性验证，失败即阻断下一批。
 - `核心`：覆盖主要业务功能，冒烟是其子集。
 - `负向`：错误输入、越权、边界，断言「系统正确拒绝/提示」。全量 = 核心 ∪ 负向。
 
+XLSX 往返模板的 `tags` 单元格是 `"冒烟,核心"` 文本、由平台前端切分；本 skill 直接 POST 的 JSON 没有这一步，必须自己给数组。单个标签 ≤ 64 字、每条用例 ≤ 20 个标签。
+
 ## 静态校验脚本
 
-`scripts/case-lint.mjs <pool.json>`：读入 7 列 JSON 数组，逐条检查 title 长度、必须以「断言：」结尾、无 `http(s)://`、format=prompt、code 合规、tags 合法。输出不合规项，退出码非 0 表示需自修。
+`scripts/case-lint.mjs <pool.json>`：读入 7 列 JSON 数组，逐条检查标题长度与「断言：」结尾、无 `http(s)://`、format=prompt、code 合规、tags **必须是字符串数组**且标签合法、`selfHealEnabled` 为数字 `0|1`、各文本字段类型与长度。输出不合规项，退出码非 0 表示需自修。**类型检查刻意不做隐式转换**——校验通过但导入被 422 拒绝更难排查。
 
 ```bash
 node scripts/case-lint.mjs output/<run>/pool.json
