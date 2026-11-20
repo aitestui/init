@@ -95,6 +95,39 @@ runner 从平台拿模型配置。**触发执行时不传 `modelRef`，走平台
 
 **绝不需要**：开浏览器登录平台、识别验证码、在平台前端代填。这些都基于过时的"保密变量 API 写不了"的错误结论——那是错的。复用已有项目/环境时**不清空已有配置**，变量写入只覆盖本次用户明确给的那几行；导入用例是覆盖语义（见下）。
 
+## 网络可达性判定与 runner 部署（阶段 2a）
+
+云 runner 在公网，访问不到内网/私网地址；内网项目必须走本地 runner。建工程后、执行前先用两条 curl 判定（从 skill 所在机器发起）：
+
+```bash
+# 1) 本地视角：TARGET_HOST = 站点 origin（scheme://host[:port]，去掉 hash/路径）
+curl -sS -o /dev/null -w '%{http_code}' --max-time 8 '<TARGET_HOST>'
+
+# 2) 云端视角：借平台 nginx /proxy 让平台机器访问同一地址
+curl -sS --max-time 10 \
+  -H 'Cookie: h5qa_sid=<用户 PAT 明文>' \
+  'https://aitestui.com/proxy?url=<TARGET_HOST 的 URL 编码>'
+```
+
+**`/proxy` 端点（nginx 层，不在 API 源码里，按线上行为为准）**：
+- 路径：`GET https://aitestui.com/proxy?url=<urlencoded-target>`（**不在 `/api/v1` 下**，是站点根路径的 nginx location）。
+- 必带 query `url`（否则 400 `Missing query param url`）、必带 cookie `h5qa_sid`（否则 403 `Missing cookie h5qa_sid`）。cookie 值就是 PAT 原文——源码 `auth-cookie.util.ts` 注明「`h5qa_sid`：值即令牌明文」。
+- `url` 必须完整 URL 编码（`https%3A%2F%2F...`）；参考线上样例：`https://aitestui.com/proxy?url=https%3A%2F%2Faitestui.com%2Fprojects%2F9%2Fhistory%2F132%3Faaa%3Dbbb`。
+- nginx 行为：`proxy_pass $arg_url`；**清空上游 Cookie**（`proxy_set_header Cookie ""`）、固定 UA `Nginx-Checker/1.0`、连接/发送/读取均 5s 超时、不回写上游 Set-Cookie。即纯探活，不会登录被测系统。
+- 响应解读：拿到目标站点返回的任意 HTTP 码（含 401/403/500）＝云端**可达**；403/502/504（来自 nginx 且 body 是 Missing cookie/Bad Gateway/Gateway Timeout）、连接失败、超时无响应＝云端**不可达**。区分 nginx 的 403（body `Missing cookie h5qa_sid`）与目标站点自己的 403（业务页面）。
+
+**判定矩阵**：本地通 + 云端通 → 公网（默认云 runner）；本地通 + 云端不通 → 内网（切 local + 引导装本地 runner）；本地不通 → 地址/本机网络问题，停下问用户。
+
+**内网项目要串的三个端点**（均带 PAT Bearer）：
+
+| 目标 | 端点 | 要点 |
+|---|---|---|
+| 取 runner 接入 token | `GET /projects/<projectId>/runner-token` | 返回 `{token}`（`data.token`），即项目共享 runner token，用于拼 join 命令；勿与 PAT 混用 |
+| 切本地执行偏好 | `PATCH /projects/<projectId>/execution-settings` | body `{"runnerPreference":"local"}`；不切则本地 runner 报 `project_preference_cloud` 领不到任务。仅 `local\|cloud` 两值 |
+| 确认 runner 上线 | `GET /runners/index?projectId=<>&pageSize=100` | 列表项 `online=1` / `status` / `lastHeartbeatAt`（心跳驱动）；公网项目无需此步 |
+
+**引导用户装本地 runner**：给出平台现成命令 `npx aitestuirunner join --url https://aitestui.com/api --token <runner-token>`——`--url` 是**去掉 `/v1` 的 API 基址**（runner path 自带 `/v1`，传 `/api/v1` 会拼成 `/api/v1/v1/...`）。`join` 自动写配置 + 装 Chromium + 自检 + 常驻启动；之后每天只需 `npx aitestuirunner start`。**是否装、装在哪台机器由用户决定**（必须是能访问内网的那台），skill 不替用户在本机执行 join。装完轮询 `runners/index` 确认在线再继续。
+
 ## 灌入用例（阶段 4）
 
 `POST /test-cases/import`，**纯 JSON**，单批上限 500：
