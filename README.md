@@ -43,6 +43,14 @@ bash scripts/build-web-zip.sh /Users/yfj/code/h5qa/fe_aitestui/public/skills
 
 脚本会把 `skills/aitestui/` 打成顶层 `aitestui/` 目录的 zip（CLI 要求的结构），并排除 `.auth`/`output` 等本地运行产物。
 
+本仓库还带一个 post-commit hook：只要提交里改了 `skills/aitestui/`，就会用 **HEAD 中已提交的内容**自动重建上面的 zip（不会混入未保存的本地改动）。克隆后装一次即可：
+
+```bash
+bash scripts/install-git-hook.sh
+```
+
+装好后正常 `git commit` 即可，zip 会随之更新；之后记得在前端仓库提交 `public/skills/aitestui.zip`。
+
 ## 它能做什么
 
 1. **文档解析**：读系统手册（PDF/DOCX/MD/HTML），抽取功能点、入口路径、关键可见文案。
