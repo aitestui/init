@@ -1,6 +1,20 @@
 ---
 name: aitestui
+display_name: aitestui 接入基线用例自动生成
+display_name_en: aitestui Onboarding Baseline Autocase
 description: 为「接入 aitestui 的新系统」从系统手册等文档自动生成接入基线用例集，用平台自身能力完成「判内外网 → 建项目/环境 → 写登录态变量 → 生成用例 → 导入 → 平台执行 → 读日志 → 改用例重跑」全链路。自动判断被测站点是公网还是内网，内网则引导用户安装本地 runner。用户提供平台身份令牌 + 一句话参数（文档/站点/环境/数量/层级/被测系统账号密码）即可，AI 全部通过平台 API 驱动，不自己开浏览器。当用户想「根据文档自动写 aitestui 测试用例」「降低用例初始化工作量」「一句话初始化 N 条核心用例」「批量接入系统/铺冒烟用例」「接入内网系统」时使用。
+description_zh: 给一份系统手册，自动完成内网判定、建项目配变量、生成基线测试用例、导入 aitestui、平台执行并按真实日志改用例到全过，最后交付执行总结与截图，大幅降低新系统接入的用例初始化工作量。
+description_en: From a system manual, automatically detect network reachability, set up project and variables, generate baseline test cases, import to aitestui, run them on the platform and fix cases against real logs until passing, then deliver a summary with screenshots.
+examples_zh:
+- "用户身份 h5qa_xxx 读取当前目录文档，初始化 10 条核心测试用例，环境 testrun222，站点 https://example.com，账号 mahy 密码 1234"
+- "根据这份系统手册，初始化 20 条冒烟测试用例，站点 https://example.com"
+- "接入内网系统，读取手册生成基线用例并跑通，站点 http://10.0.0.10:8080"
+examples_en:
+- "My platform token h5qa_xxx, read docs in current directory, initialize 10 core test cases, env testrun222, site https://example.com"
+- "Based on this manual, initialize 20 smoke test cases for site https://example.com"
+- "Onboard an intranet system: read the manual, generate baseline cases and run them, site http://10.0.0.10:8080"
+version: 1.0.0
+author: aitestui
 ---
 
 # aitestui 接入基线用例自动生成（Onboarding Baseline Autocase）
@@ -225,7 +239,7 @@ Content-Type: application/json
 
 **① 执行情况总结**：本次接入了多少条用例、分哪几批、通过/失败/转人工各多少、总消耗积分（读 `summary.md` 与各 run 的 `total/passed/failed`）。有 `needs_human` 的如实点出卡点，不掩盖。
 
-**② 运行结果截图（三批各一张，来自平台执行产物，不自己截图）**：从**每批**对应的 runId 取 `GET /test-runs/<runId>/artifacts`，筛 `type='screenshot'` 的构件，用其 `objectKey` 拼 `https://static.appkc.com/<objectKey>` 得到被测页面截图 URL。这是 Midscene 执行用例时平台自动截的**被测页面**图，全程 API 拉取，**不自己开浏览器、不自己截图**（遵守 D9）。要点：
+**② 运行结果截图（三批各一张，来自平台执行产物，不自己截图）**：从**每批**对应的 runId 取 `GET /test-runs/<runId>/artifacts`，筛 `type='screenshot'` 的构件，用其 `objectKey` 拼 `https://static.appkc.com/<objectKey>` 得到被测页面截图 URL。这是 Midscene 执行用例时平台自动截的**被测页面**图，全程 API 拉取，**不自己开浏览器、不自己截图**。要点：
 - 按**实际执行的批次**取：跑了三批就三张（冒烟/核心/全量各一张），只跑一批（如「10 条核心」）就一张，不硬凑三张。
 - 每批取哪张：优先取该批**通过用例**的 screenshot（截图更有代表性）；按 `attemptId` 关联 `attempts[]` 挑。若该批无任何 screenshot 构件（如执行失败未落图），就跳过这张并在总结里说明，不要编造 URL。
 - 在回复里以图片形式呈现（能内联就内联，不能就给出图片 URL）。

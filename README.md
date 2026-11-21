@@ -33,9 +33,24 @@ git config --global --unset url."https://gitclone.com/".insteadOf
 ```
 镜像站会变动，公益镜像**勿带任何 token/cookie**；已有代理（VPN/Clash 或 `HTTPS_PROXY`）则无需改写。
 
-### WorkBuddy 用户注意
+### WorkBuddy 技能市场（客户端一键安装）
 
-`npx skills add` 不认识 WorkBuddy 这个目标（它写 `~/.agents/skills/`，而 WorkBuddy 只扫 `~/.workbuddy/skills/`）。WorkBuddy 用户请用上面的 zip 方式，把包解压到 `~/.workbuddy/skills/aitestui/`，或直接对 WorkBuddy 说「安装 aitestui 技能」。技能列表在会话启动时固化，**装完需新开会话**才能用 `/aitestui`。
+在 WorkBuddy 客户端左侧【专家·技能·连接器】→【技能】→ 技能市场，搜索 `aitestui`，点技能右上角加号即可安装，安装后对话中可直接用 `/aitestui` 调用。
+
+### WorkBuddy 本地手动安装
+
+`npx skills add` 不认识 WorkBuddy 这个目标（它写 `~/.agents/skills/`，而 WorkBuddy 只扫 `~/.workbuddy/skills/`）。也可以下载官网 zip 解压到 `~/.workbuddy/skills/aitestui/`，或直接对 WorkBuddy 说「安装 aitestui 技能」。技能列表在会话启动时固化，**装完需新开会话**才能用 `/aitestui`。
+
+### 技能包发布到 WorkBuddy 市场（维护者）
+
+WorkBuddy 市场的包结构与官网/skills.sh **相反**：解压第一层必须**直接是 `SKILL.md`**（不套 `aitestui/` 目录），且 `SKILL.md` frontmatter 需含 `display_name`/`display_name_en`/`description_zh`/`description_en`/`version`（三段式）/`author`/`examples_zh`/`examples_en`。生成市场包：
+
+```bash
+bash scripts/build-marketplace-zip.sh dist
+# 产出 dist/aitestui-workbuddy-market.zip（解压根目录即 SKILL.md）
+```
+
+发布流程在 **WorkBuddy 开放平台**（`open.workbuddy.cn`，非 GitHub）：完成开发者认证 →【发布管理 → 技能 → 创建】上传该 zip → 选分类/类目、传 512×512 头像 → 提交审核（约 7 个工作日）→ 审核通过后**手动点「发布」**。更新版本须升 `version` 并重新上传审核。官网 zip（`build-web-zip.sh`）与市场 zip（`build-marketplace-zip.sh`）是两个不同渠道，别混用。
 
 ## 怎么用：一句话带齐参数
 
