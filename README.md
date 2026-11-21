@@ -1,9 +1,11 @@
 # aitestui/init — 接入基线用例自动生成 skill
 
-给 aitestui 补上缺失的那块能力：**用户不必从零手写测试用例**。给一份被测系统的手册，让 AI 完成「登录 → 实地探索 → 生成三批用例 → 本地自执行 → 按系统真实行为改用例到全过 → 灌回 aitestui」的全链路，显著降低新系统接入的冷启动工作量。
+给 aitestui 补上缺失的那块能力：**用户不必从零手写测试用例**。给一份被测系统的手册和平台身份，本 skill 用**平台自身的能力**完成「判内外网 → 建项目/环境 → 写登录态 → 生成用例 → 导入 → 执行 → 读日志 → 改用例到全过」，显著降低新系统接入的冷启动工作量。
+
+> **核心原则：skill 不自己干活，只指挥 aitestui 干活。** 打开被测站点、登录、点按钮、判定结果、出报告，全是平台 runner 执行用例时做的。skill 只做三件事：调平台 API、生成与修改用例文本、按执行日志归因。文档可能落后，以平台跑出来的真实行为为准。
 
 - Skill 名：`aitestui`（安装后用 `/aitestui` 调用）
-- 决策依据：[ADR-0075](docs/adr/0075-onboarding-baseline-autocase.md) · 术语：[Glossary](docs/glossary-onboarding-baseline.md)
+- 设计说明与术语见 [`docs/`](docs/)（决策记录与术语表）
 
 ## 安装
 
@@ -15,7 +17,7 @@ npx skills add https://aitestui.com/skills/aitestui.zip
 
 这是最简便的方式：安装包放在 aitestui 官网静态目录下，全程不走 GitHub。`npx skills add <URL>` 支持直接下载 zip/tar.gz 并解压安装（已实测）。若 `npx` 拉包慢，先配 npm 镜像：`npm config set registry https://registry.npmmirror.com`。
 
-### 海外 / 可直连 GitHub
+### 海外 / 可直连 GitHub（skills.sh 市场）
 
 ```bash
 npx skills add aitestui/init
@@ -31,11 +33,77 @@ git config --global --unset url."https://gitclone.com/".insteadOf
 ```
 镜像站会变动，公益镜像**勿带任何 token/cookie**；已有代理（VPN/Clash 或 `HTTPS_PROXY`）则无需改写。
 
-安装后在 agent 里用 `/aitestui` 调用，或说「根据这份文档帮我生成 aitestui 初始化测试用例」。
+### WorkBuddy 用户注意
 
-### zip 包从哪来 / 怎么更新
+`npx skills add` 不认识 WorkBuddy 这个目标（它写 `~/.agents/skills/`，而 WorkBuddy 只扫 `~/.workbuddy/skills/`）。WorkBuddy 用户请用上面的 zip 方式，把包解压到 `~/.workbuddy/skills/aitestui/`，或直接对 WorkBuddy 说「安装 aitestui 技能」。技能列表在会话启动时固化，**装完需新开会话**才能用 `/aitestui`。
 
-zip 由发布仓库 `skills/aitestui/` 打包而成，放在本项目前端静态目录 `fe_aitestui/public/skills/aitestui.zip`，随前端构建发布到 `https://aitestui.com/skills/aitestui.zip`。**更新 skill 后必须同时推 GitHub 仓库并重新生成官网 zip**，否则官网安装到的是旧版。生成 zip：
+## 怎么用：一句话带齐参数
+
+不必填表，一句大白话把能给的都给出来，AI 自己解析，缺关键项才一轮问齐：
+
+```
+/aitestui 用户身份：h5qa_xxx 读取当前目录下的文档 初始化 10 条核心测试用例
+环境：testrun222 url: https://bims-testrun2-2-2.ccic.com/ccictyx/#/zh-CN/ 账号 mahy,密码 1234
+```
+
+| 用户这么说 | 解析成 |
+|---|---|
+| 「用户身份：h5qa_xxx」 | 平台个人令牌，Bearer 直调全部 API（唯一必须提供的平台项） |
+| 「读取当前目录下的文档」「手册在 /path/a.pdf」 | 文档文件或目录（PDF/DOCX/MD/HTML 全读） |
+| 「https://xxx/#/zh-CN/」 | 被测站点地址，写入环境 `URL` 变量 |
+| 「testrun222 环境」「主干系统项目」 | 按名字复用已有环境/项目，找不到才新建 |
+| 「初始化 10 条」「核心测试用例」 | 本次生成数量与层级；「10 条核心」＝只做核心层 10 条 |
+| 「账号 mahy，密码 1234」「用户身份 token：xxx」 | 被测系统登录态，写成平台环境级保密变量 |
+
+没有给数量时按积分余额自动定量（见下）。账号密码、令牌这类凭据只在调 API / 配变量时使用，**不进用例、不进产物、不在回复里回显**。
+
+## 它能做什么
+
+1. **文档解析**：读系统手册，抽出功能点、入口路径、关键可见文案，落成规格说明。
+2. **内外网判定**：明显内网地址（localhost / 10. / 192.168. 等）直接短路；其余地址用本地 + 平台双探活判定。内网项目先查有没有在线本地测试机，没有才用大白话引导用户在能访问内网的电脑装本地 runner。
+3. **接入准备**：全 API 建/复用项目与环境，写 `URL` 与保密登录变量，取默认分支——不打开浏览器。
+4. **生成用例池**：按文档生成接入基线用例集，每条 7 列 JSON，按 `冒烟 / 核心 / 负向` 打分层标签；数量按积分余额决定，单批硬顶 100 条、单个执行任务 ≤ 50 条。
+5. **导入平台**：`POST /test-cases/import` 批量写入，按 code 覆盖；查回用例 id 建立映射。
+6. **平台执行闭环**：触发执行 → 轮询终态 → 读真实日志 → 只归因于「用例问题」或「文档落后」→ 改用例重跑到过；同 code 3 次不过转人工。
+7. **最终交付**：执行情况总结 + 每批一张被测页截图（来自平台执行产物）+ 结果链接（单用例给执行结果页、多用例给用例列表页）+ 下一步生成更多用例的引导。
+
+## 数量决策（按积分余额）
+
+生成前查一次 `GET /credits/me` 取余额，用户没显式给数量时：
+
+```
+N = min(100, 10 + floor(balance / 500) * 10)
+```
+
+| 余额 | 生成条数 | 余额 | 生成条数 |
+|---|---|---|---|
+| < 500 | 10 | 2500–2999 | 60 |
+| 500–999 | 20 | 3000–3499 | 70 |
+| 1000–1499 | 30 | 3500–3999 | 80 |
+| 1500–1999 | 40 | 4000–4499 | 90 |
+| 2000–2499 | 50 | ≥ 4500 | 100（封顶） |
+
+积分少时少生成，避免堆一批没调试成功的用例；积分多时多生成提效。用户显式给的数量优先（仍受 100 硬顶）；查询失败保守取 10 条、不阻塞主流程。
+
+## 前置条件
+
+- Node.js ≥ 18；能访问你的 aitestui 实例（默认生产 `https://aitestui.com`）。
+- 一个 aitestui 个人身份令牌（`h5qa_...`），由用户在调用时提供。
+- 被测系统的手册与可访问地址；账号密码/登录令牌由用户提供，写进平台保密变量。
+- 内网站点需要一台能访问该站点的电脑安装本地 runner（skill 会给出平台现成的安装命令，由用户决定装在哪台机器）。
+- 执行用的模型与 runner 全部由平台内部处理，用户不需要配置模型。
+
+## 安全与权限
+
+- **不改平台代码/接口**：所有写入只调 aitestui 现有 API；平台改造需求只记录到 `changes.md`，留待统一开发。
+- **凭据只走平台保密变量**：账号密码/令牌通过单条变量 API 加密写入平台，不进用例、不进产物、不回显；本地产物不保存明文凭据。
+- **灌库按 code 覆盖**：首次接入前确认目标项目为空或接受覆盖（详见 [api-contract.md](skills/aitestui/references/api-contract.md)）。
+- **网络探活是唯一例外**：只允许 curl 取连通性判断内外网，不登录、不断言、不看页面内容。
+- 脚本 `skills/aitestui/scripts/case-lint.mjs` 只读本地 JSON、无网络与写操作。
+
+## zip 包从哪来 / 怎么更新
+
+zip 由发布仓库 `skills/aitestui/` 打包而成，放在前端静态目录 `fe_aitestui/public/skills/aitestui.zip`，随前端构建发布到 `https://aitestui.com/skills/aitestui.zip`。**更新 skill 后必须同时推 GitHub 仓库并重新生成官网 zip**，否则官网安装到的是旧版。生成 zip：
 
 ```bash
 bash scripts/build-web-zip.sh /Users/yfj/code/h5qa/fe_aitestui/public/skills
@@ -51,42 +119,6 @@ bash scripts/install-git-hook.sh
 
 装好后正常 `git commit` 即可，zip 会随之更新；之后记得在前端仓库提交 `public/skills/aitestui.zip`。
 
-## 它能做什么
-
-1. **文档解析**：读系统手册（PDF/DOCX/MD/HTML），抽取功能点、入口路径、关键可见文案。
-2. **人工辅助登录**：开浏览器让你登录被测系统（导出 storageState）+ 登录 aitestui（取 API token）。登录态只落本地。
-3. **实地探索**：带登录态在真实页面走查，修正文档缺漏与落后之处。
-4. **生成用例池**：一次性生成接入基线用例集，按 `冒烟 / 核心 / 负向` 打标签（冒烟 ⊂ 核心 ⊂ 全量）。
-5. **三批串行自执行**：冒烟 → 核心 → 全量；失败按真实行为改用例重跑到通过，3 次不过转人工。
-6. **灌回平台**：用现有 `POST /test-cases/import` 批量写入，不新增平台接口。
-7. **变更清单**：文档差异与「需改造平台、最后统一开发」的点记入 `changes.md`。
-
-## 前置条件
-
-- Node.js ≥ 18；可联网访问 npm（`npx skills`）与你的 aitestui 实例。
-- 一个可登录的 aitestui 账号与项目（token 由你在运行时提供）。
-- 一个可访问的被测站点；内网站点需自备能访问内网的本地 runner。
-- 执行模型走 OpenAI 兼容端点（`MIDSCENE_MODEL_*`，支持豆包 / Qwen / DeepSeek / Gemini / GPT-5 / Kimi / GLM / MiMo 等 family）；生成模型另配。
-
-## 参数
-
-| 参数 | 必填 | 说明 |
-|---|---|---|
-| `DOC` | 是 | 被测系统手册/需求文档路径，可多份 |
-| `TARGET_URL` | 是 | 被测站点地址（写入环境 `URL` 变量） |
-| `PROJECT_ID` | 否 | 已有 aitestui 项目 id；不填则新建 |
-| `AITESTUI_BASE` | 是 | 平台接口基址，如 `https://aitestui.com/api` |
-| `AITESTUI_TOKEN` | 是 | 登录后取得的 API token |
-| `MIDSCENE_MODEL_*` | 是 | 执行模型 baseURL/apiKey/name/family |
-
-## 安全与权限
-
-- **不改平台代码/接口**：所有写入只调 aitestui 现有 API；平台改造需求只记录。
-- **登录态不进用例、不进平台**：storageState 与 token 只存本地 `output/<run>/.auth/`，请勿提交；失效时暂停提示重登，不自动重登。
-- **保密变量**（`COOKIE`/`USERNAME`/`PASSWORD`）API 不写入，引导用户在平台环境里手填。
-- **灌库按 code 覆盖**：首次接入前确认目标项目为空或接受覆盖（详见 [api-contract.md](skills/aitestui/references/api-contract.md)）。
-- 脚本 `skills/aitestui/scripts/case-lint.mjs` 只读本地 JSON、无网络与写操作。
-
 ## 目录结构
 
 ```
@@ -97,7 +129,7 @@ skills/aitestui/
 │   └── api-contract.md         # 现有 API 端点与字段契约
 └── scripts/
     └── case-lint.mjs           # 用例池静态校验器
-docs/                           # ADR 与术语（背景参考资料）
+docs/                           # 设计记录与术语（背景参考资料）
 ```
 
 ## 验证
