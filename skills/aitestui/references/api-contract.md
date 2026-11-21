@@ -134,7 +134,7 @@ curl -sS --max-time 10 \
 - nginx 行为：`proxy_pass $arg_url`；**清空上游 Cookie**（`proxy_set_header Cookie ""`）、固定 UA `Nginx-Checker/1.0`、连接/发送/读取均 5s 超时、不回写上游 Set-Cookie。即纯探活，不会登录被测系统。
 - 响应解读：拿到目标站点返回的任意 HTTP 码（含 401/403/500）＝云端**可达**；403/502/504（来自 nginx 且 body 是 Missing cookie/Bad Gateway/Gateway Timeout）、连接失败、超时无响应＝云端**不可达**。区分 nginx 的 403（body `Missing cookie h5qa_sid`）与目标站点自己的 403（业务页面）。
 
-**判定矩阵**：本地通 + 云端通 → 公网（默认云 runner）；本地通 + 云端不通 → 内网；本地不通 → 地址/本机网络问题，停下问用户。**判为内网后**（含上面短路的私网地址）：先 `GET /runners/index?projectId=<>&pageSize=100` 查有无 `online=1` 本地机——有就复用、切 local 后直接继续；没有才切 local + 引导用户装本地 runner。
+**判定矩阵**：本地通 + 云端通 → 公网（默认云 runner）；本地通 + 云端不通 → 内网；本地不通 → 地址/本机网络问题，停下问用户。**判为内网后**（含上面短路的私网地址）：先 `GET /runners/index?projectId=<>&pageSize=100` 查有无 `online=1` 本地机——有就复用、切 local 后直接继续；没有则**先用大白话询问用户是否要在本机安装并启动测试机程序**——同意就按下方命令在当前机器装+启动，不同意就把命令给用户自己决定装在哪台。桌面/移动项目同样走这套「查在线机 → 询问 → 装/启动 → 切 local → 确认在线」，只是跳过探活。
 
 **内网项目要串的三个端点**（均带 PAT Bearer）：
 
@@ -144,7 +144,7 @@ curl -sS --max-time 10 \
 | 切本地执行偏好 | `PATCH /projects/<projectId>/execution-settings` | body `{"runnerPreference":"local"}`；不切则本地 runner 报 `project_preference_cloud` 领不到任务。仅 `local\|cloud` 两值 |
 | 确认 runner 上线 | `GET /runners/index?projectId=<>&pageSize=100` | 列表项 `online=1` / `status` / `lastHeartbeatAt`（心跳驱动）；公网项目无需此步 |
 
-**引导用户装本地 runner**：给出平台现成命令 `npx aitestuirunner join --url https://aitestui.com/api --token <runner-token>`（web 项目缺省目标端）；`--url` 是**去掉 `/v1` 的 API 基址**（runner path 自带 `/v1`，传 `/api/v1` 会拼成 `/api/v1/v1/...`）。**桌面/移动项目必须追加 `--target-type <windows|computer|android>`**，否则 runner 按 web 上报、永远领不到任务。`join` 自动写配置 + 装 Chromium（桌面端跳过）+ 自检 + 常驻启动；之后每天只需 `npx aitestuirunner start`。**是否装、装在哪台机器由用户决定**（必须是能访问内网/被测应用的那台），skill 不替用户在本机执行 join。装完轮询 `runners/index` 确认在线再继续。
+**安装并启动本地 runner（无在线机时，先询问用户同意）**：先用大白话问「要不要在这台电脑安装并启动测试机程序」，用户同意才在当前机器执行平台现成命令 `npx aitestuirunner join --url https://aitestui.com/api --token <runner-token>`（web 项目缺省目标端）；`--url` 是**去掉 `/v1` 的 API 基址**（runner path 自带 `/v1`，传 `/api/v1` 会拼成 `/api/v1/v1/...`）。**桌面/移动项目必须追加 `--target-type <windows|computer|android>`**，否则 runner 按 web 上报、永远领不到任务。`join` 自动写配置 + 装 Chromium（桌面端跳过）+ 自检 + **常驻启动**（后台方式、别阻塞会话）；之后每天只需 `npx aitestuirunner start`。执行前先确认这台机器能访问内网/被测应用（桌面项目还要是能启动被测应用的那台 OS）；runner token 只在命令里用、不回显、不进产物。**只做接入准备，不代替执行用例**。用户不同意或想装到别的机器 → 把命令给他、由他决定装在哪，skill 不替他执行。装完轮询 `runners/index` 确认在线再继续。
 
 ## 灌入用例（阶段 4）
 

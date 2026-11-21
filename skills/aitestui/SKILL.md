@@ -15,7 +15,7 @@ examples_en:
 - "Based on this manual, initialize 20 smoke test cases for site https://example.com"
 - "Onboard an intranet system: read the manual, generate baseline cases and run them, site http://10.0.0.10:8080"
 - "Onboard a Windows desktop app: read the manual, initialize 10 core cases, app name XX"
-version: 1.1.0
+version: 1.2.0
 author: aitestui
 ---
 
@@ -35,7 +35,7 @@ author: aitestui
 
 入口和文案对不对、**登录态是否有效**，一律由**平台执行用例的真实结果**来证明；失败就看平台日志，按日志改用例重跑。文档可能落后，以平台跑出来的真实行为为准。
 
-**唯一例外——网络可达性探测（阶段 2a，仅网页项目）**：允许用 `curl` 做两件事——从本地探被测站点、经平台 `/proxy` 从云端探同一站点——目的只是判定「内网 / 公网」，从而决定用本地 runner 还是云 runner。**桌面应用项目（windows/computer/android）没有站点 URL、强制本地 runner，不做任何探活**。这属于接入决策，**不是访问页面做测试、不是执行用例**，两条 curl 都不做登录、不断言、不看页面内容。除这两条探测外，仍遵守上面的禁令。
+**例外只两处，都不是"自己干活"**：① **网络可达性探测（阶段 2a，仅网页项目）**——允许用 `curl` 从本地 + 经平台 `/proxy` 探同一站点，只判「内网 / 公网」决定 runner 走法；桌面应用项目（windows/computer/android）没有站点 URL、强制本地 runner，不探活。② **按需安装并启动测试机程序（阶段 2a 步骤 3）**——没有在线本地机时先询问用户，**仅用户同意**才在当前机器执行 `npx aitestuirunner join`（装完即启动），且只做接入准备、不代替执行用例。除这两处外，仍遵守上面的禁令；两处都不访问页面内容、不登录、不断言、不看业务数据。
 
 ## 用户沟通纪律
 
@@ -178,22 +178,28 @@ Content-Type: application/json
 - 两条探测**都不带被测系统账号密码、不尝试登录**；登录态仍由阶段 2 的 secret 变量负责。
 - PAT 只放进本地 curl 的 cookie 头与脚本内存，不写文件、不回显、不进产物。
 
-**步骤 3 — 内网项目处理：先查在线本地机，没有才引导安装**
+**步骤 3 — 内网/本地项目处理：先查在线本地机，没有就询问用户是否要装+启动**
 
-1. **先查有没有现成的在线本地测试机**：`GET /runners/index?projectId=<>&pageSize=100`，看是否有 `online=1` 的本地 runner（心跳驱动）。**有就直接复用**——把项目 runnerPreference 切到 local（下方第 3 条），进入阶段 2/3，不用麻烦用户装任何东西，也跳过下面的安装引导。
-2. **没有在线本地机 → 引导用户安装**（用大白话，不堆技术词）：
+1. **先查有没有现成的在线本地测试机**：`GET /runners/index?projectId=<>&pageSize=100`，看是否有 `online=1` 的本地 runner（心跳驱动；桌面项目还要确认目标端能力匹配，见上）。**有就直接复用**——把项目 runnerPreference 切到 local（下方第 4 条），进入阶段 2/3，不用麻烦用户装任何东西，也跳过下面的询问与安装。
+2. **没有在线本地机 → 先用大白话询问用户**（一轮 Yes/No，不堆技术词、不反复追问）：「这个站点/应用只有本机这类电脑能连上，现在还没有测试机在线。要不要我**在这台电脑上安装并启动**一个测试机程序？装一次就好，之后会自动在线。」用 `AskUserQuestion` 之类的一轮确认即可。
+   - **用户同意** → 走第 3 条，skill 在当前机器安装并启动（不要再把命令丢给用户自己折腾）。
+   - **用户想装到别的机器 / 暂时不想装** → 走第 3 条末尾「自行安装」，给出命令让用户自己决定装在哪台。
+3. **安装并启动测试机程序**（仅用户同意时。这是「skill 不自己干活」铁律的第二个例外，**只做接入准备，绝不用它代替执行用例**——用例仍由平台 runner 经 API 执行）：
    - 用 `GET /projects/<projectId>/runner-token` 取该项目的 runner 接入 token（平台现有能力，不用用户去页面找）。
-   - 告诉用户（示意）：「这个站点是内网地址，云端测试机连不上。需要在**一台能打开该站点的电脑**上安装一个小助手，装一次即可。」给出平台现成的一行命令：
+   - **先确认当前机器是合适的那台**：web 私网地址（localhost/127./10./172.16-31./192.168./169.254. 等）要求当前机器能打开该站点；企业内网域名若当前机器也打不开，先问清楚再装；桌面项目要求当前机器就是能启动被测应用的那台（windows→Windows、computer→Mac、android→连着设备的机器）。
+   - 执行安装+启动命令（web 项目不带目标端；**桌面/移动项目必须带对应值**，否则 runner 按 web 上报、永远领不到任务）：
      ```bash
-     # web 项目（内网站点）：不带 --target-type，默认 web
+     # web 项目（内网站点）
      npx aitestuirunner join --url https://aitestui.com/api --token <runner-token>
+     # windows 桌面项目（按项目类型换成 computer/android）
+     npx aitestuirunner join --url https://aitestui.com/api --token <runner-token> --target-type windows
      ```
-     `--url` 必须是**去掉 `/v1` 的 API 基址**（runner 侧 path 自带 `/v1`，传 `/api/v1` 会拼成 `/api/v1/v1/...`）。`join` 一条龙完成写配置、下载浏览器、自检、常驻启动。
-   - **桌面应用项目（windows/computer/android）必须用带目标端的命令**：`npx aitestuirunner join --url https://aitestui.com/api --token <runner-token> --target-type <windows|computer|android>`。**不带这个参数 runner 会按 web 上报，永远领不到桌面项目的任务**（派单严格相等匹配）；带了对目标端还会跳过 Chromium 安装。
-   - **不要替用户在本机执行 join**——那台机器必须是用户网络里能访问内网/被测应用的机器，是否装、装在哪由用户决定。
-3. **切本地执行偏好**（第 1 条复用了也仍要确认）：`PATCH /projects/<projectId>/execution-settings`，body `{"runnerPreference":"local"}`（见 api-contract）。这样触发执行时才会派给本地 runner；**不切的话本地 runner 报 `project_preference_cloud` 告警、领不到任务**。
-4. **确认在线**：再次 `GET /runners/index?projectId=<>&pageSize=100` 确认有 `online=1` 的本地 runner（新装的通常几十秒内上线）；确认后再进入阶段 3。
-5. 若用户暂时无法安装 → 记录到 `summary.md` 的阻塞项，用大白话说明「没有本地助手，这批用例跑不了」，暂停后续执行阶段，等用户装好再继续。
+     `--url` 必须是**去掉 `/v1` 的 API 基址**（runner 侧 path 自带 `/v1`，传 `/api/v1` 会拼成 `/api/v1/v1/...`）。`join` 一条龙完成写配置、下载浏览器（桌面端跳过）、自检、**常驻启动**——装完即在线，不用再单独 `start`。用后台方式启动，别阻塞会话。
+   - runner token 只在命令里用，不回显、不写进用例/产物。
+   - **自行安装**（用户想装到别的机器或暂时不想让我装）：把上面的 join 命令原样给用户，说明装在哪台由他决定（必须能访问内网/被测应用），skill 不替他执行。
+4. **切本地执行偏好**（第 1 条复用了也仍要确认）：`PATCH /projects/<projectId>/execution-settings`，body `{"runnerPreference":"local"}`（见 api-contract）。这样触发执行时才会派给本地 runner；**不切的话本地 runner 报 `project_preference_cloud` 告警、领不到任务**。
+5. **确认在线**：再次 `GET /runners/index?projectId=<>&pageSize=100` 确认有 `online=1` 的本地 runner（新装的通常几十秒内上线）；确认后再进入阶段 3。
+6. 用户暂时不装、也没有在线机 → 记录到 `summary.md` 的阻塞项，用大白话说明「没有本地助手，这批用例跑不了」，暂停后续执行阶段，等用户装好再继续。
 
 公网 web 项目则跳过本步骤 3，直接进入阶段 2；桌面应用项目本就是本地 runner，走完步骤 3（含目标端匹配确认）再进阶段 2。
 
@@ -292,7 +298,7 @@ Content-Type: application/json
 
 - **只用 aitestui 能力，skill 不自己开浏览器访问/登录被测站点、不识别验证码、不本地执行用例**；打开页面/启动应用、登录、断言、出报告全是平台 runner 的事。
 - **项目类型先判对**：缺省 web；桌面/移动项目（windows/computer/android）建项目时显式传 `targetType`，服务端强制 local。桌面项目不做网络探活、不写 URL 变量，入口写应用名/路径而非 `/path`。接入命令必须带**与项目类型一致的 `--target-type`**——不带 runner 会按 web 上报、领不到桌面任务；派单严格相等匹配，Mac runner 领不到 Windows 单。
-- **网络探活是唯一例外，且只对 web 项目**：web 明显私网地址（localhost/127./10./172.16-31./192.168./169.254./::1 等）**直接判内网、跳过探活**；其余 web 地址才允许两条 curl（本地直连 + 平台 `/proxy`）判定，只取 HTTP 连通性，不登录、不断言、不看页面内容。判为内网先查 `runners/index` 有无在线本地机——有就复用，没有才切项目偏好到 local 并引导用户在其内网机器装本地 runner；不替用户执行 join、不猜测网络。桌面/移动项目跳过整段探活。
+- **仅两处例外，都不算「自己干活」**：① **网络探活（只对 web 项目）**——web 明显私网地址（localhost/127./10./172.16-31./192.168./169.254./::1 等）直接判内网、跳过探活；其余 web 地址才允许两条 curl（本地直连 + 平台 `/proxy`）判定，只取 HTTP 连通性，不登录、不断言、不看页面内容；桌面/移动项目跳过整段探活。② **按需装本地测试机**——判为内网/本地项目且无在线机时，**先用大白话询问用户是否要在本机安装并启动测试机程序**；同意才在当前机器执行 `npx aitestuirunner join`（先确认这台机器能访问内网/启动被测应用、后台启动、token 不回显、只做接入准备不代替执行用例），不同意就把命令给用户自己决定装在哪台。有在线机就复用、不折腾用户；不猜测网络。
 - **平台身份用用户给的 PAT，Bearer 直调 API**；不引导浏览器登录平台、不读 runner/.env、不做探索式探测。
 - **登录态走平台 secret 变量 API**（单条 add/edit 支持 secret，batch 不支持）；凭据不进用例、不进产物、不回显、不外发。
 - **不改平台代码、不改平台接口**；改造需求只记录到 `changes.md`。
