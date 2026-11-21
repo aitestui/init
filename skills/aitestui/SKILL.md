@@ -7,12 +7,10 @@ description_zh: 给一份系统手册，自动识别项目类型（网页/Window
 description_en: From a system manual, detect project type (web / Windows desktop), set up project and variables, generate baseline test cases, import to aitestui, run them on the platform and fix cases against real logs until passing, then deliver a summary with screenshots.
 examples_zh:
 - "用户身份 h5qa_xxx 读取当前目录文档，初始化 10 条核心测试用例，环境 testrun222，站点 https://example.com，账号 mahy 密码 1234"
-- "根据这份系统手册，初始化 20 条冒烟测试用例，站点 https://example.com"
 - "接入内网系统，读取手册生成基线用例并跑通，站点 http://10.0.0.10:8080"
 - "接入 Windows 桌面应用，读取手册初始化 10 条核心用例，应用名「XX 客户端」"
 examples_en:
 - "My platform token h5qa_xxx, read docs in current directory, initialize 10 core test cases, env testrun222, site https://example.com"
-- "Based on this manual, initialize 20 smoke test cases for site https://example.com"
 - "Onboard an intranet system: read the manual, generate baseline cases and run them, site http://10.0.0.10:8080"
 - "Onboard a Windows desktop app: read the manual, initialize 10 core cases, app name XX"
 version: 1.2.0
