@@ -2,18 +2,20 @@
 name: aitestui
 display_name: aitestui 接入基线用例自动生成
 display_name_en: aitestui Onboarding Baseline Autocase
-description: 为「接入 aitestui 的新系统」从系统手册等文档自动生成接入基线用例集，用平台自身能力完成「判内外网 → 建项目/环境 → 写登录态变量 → 生成用例 → 导入 → 平台执行 → 读日志 → 改用例重跑」全链路。自动判断被测站点是公网还是内网，内网则引导用户安装本地 runner。用户提供平台身份令牌 + 一句话参数（文档/站点/环境/数量/层级/被测系统账号密码）即可，AI 全部通过平台 API 驱动，不自己开浏览器。当用户想「根据文档自动写 aitestui 测试用例」「降低用例初始化工作量」「一句话初始化 N 条核心用例」「批量接入系统/铺冒烟用例」「接入内网系统」时使用。
-description_zh: 给一份系统手册，自动完成内网判定、建项目配变量、生成基线测试用例、导入 aitestui、平台执行并按真实日志改用例到全过，最后交付执行总结与截图，大幅降低新系统接入的用例初始化工作量。
-description_en: From a system manual, automatically detect network reachability, set up project and variables, generate baseline test cases, import to aitestui, run them on the platform and fix cases against real logs until passing, then deliver a summary with screenshots.
+description: 为「接入 aitestui 的新系统」从系统手册等文档自动生成接入基线用例集，用平台自身能力完成「识别项目类型 → 建项目/环境 → 配登录态 → 生成用例 → 导入 → 平台执行 → 读日志 → 改用例重跑」全链路。网页项目自动判公网/内网，内网引导装本地 runner；Windows 桌面等非网页项目强制本地 runner。用户提供平台身份令牌 + 一句话参数（文档/站点或应用/环境/数量/层级/被测系统账号密码）即可，AI 全部通过平台 API 驱动，不自己开浏览器。当用户想「根据文档自动写 aitestui 测试用例」「降低用例初始化工作量」「一句话初始化 N 条核心用例」「批量接入系统/铺冒烟用例」「接入内网系统」「接入 Windows 桌面应用」时使用。
+description_zh: 给一份系统手册，自动识别项目类型（网页/Windows 桌面等）、建项目配变量、生成基线测试用例、导入 aitestui、平台执行并按真实日志改用例到全过，最后交付执行总结与截图，大幅降低新系统接入的用例初始化工作量。
+description_en: From a system manual, detect project type (web / Windows desktop), set up project and variables, generate baseline test cases, import to aitestui, run them on the platform and fix cases against real logs until passing, then deliver a summary with screenshots.
 examples_zh:
 - "用户身份 h5qa_xxx 读取当前目录文档，初始化 10 条核心测试用例，环境 testrun222，站点 https://example.com，账号 mahy 密码 1234"
 - "根据这份系统手册，初始化 20 条冒烟测试用例，站点 https://example.com"
 - "接入内网系统，读取手册生成基线用例并跑通，站点 http://10.0.0.10:8080"
+- "接入 Windows 桌面应用，读取手册初始化 10 条核心用例，应用名「XX 客户端」"
 examples_en:
 - "My platform token h5qa_xxx, read docs in current directory, initialize 10 core test cases, env testrun222, site https://example.com"
 - "Based on this manual, initialize 20 smoke test cases for site https://example.com"
 - "Onboard an intranet system: read the manual, generate baseline cases and run them, site http://10.0.0.10:8080"
-version: 1.0.0
+- "Onboard a Windows desktop app: read the manual, initialize 10 core cases, app name XX"
+version: 1.1.0
 author: aitestui
 ---
 
@@ -33,7 +35,7 @@ author: aitestui
 
 入口和文案对不对、**登录态是否有效**，一律由**平台执行用例的真实结果**来证明；失败就看平台日志，按日志改用例重跑。文档可能落后，以平台跑出来的真实行为为准。
 
-**唯一例外——网络可达性探测（阶段 2a）**：允许用 `curl` 做两件事——从本地探被测站点、经平台 `/proxy` 从云端探同一站点——目的只是判定「内网 / 公网」，从而决定用本地 runner 还是云 runner。这是接入决策，**不是访问页面做测试、不是执行用例**，两条 curl 都不做登录、不断言、不看页面内容。除这两条探测外，仍遵守上面的禁令。
+**唯一例外——网络可达性探测（阶段 2a，仅网页项目）**：允许用 `curl` 做两件事——从本地探被测站点、经平台 `/proxy` 从云端探同一站点——目的只是判定「内网 / 公网」，从而决定用本地 runner 还是云 runner。**桌面应用项目（windows/computer/android）没有站点 URL、强制本地 runner，不做任何探活**。这属于接入决策，**不是访问页面做测试、不是执行用例**，两条 curl 都不做登录、不断言、不看页面内容。除这两条探测外，仍遵守上面的禁令。
 
 ## 用户沟通纪律
 
@@ -64,7 +66,10 @@ Content-Type: application/json
 |---|---|---|
 | 「用户身份：h5qa_xxx」 | 平台 PAT | Bearer 调所有 API（必需） |
 | 「读取当前目录下的文档」「手册在 /path/a.pdf」 | `DOC` | 文档文件或目录（目录下 PDF/DOCX/MD/HTML 全读） |
-| 「https://xxx/#/zh-CN/」 | `TARGET_URL` | 写入环境 `URL` 变量（平台只接受 origin，hash/路径自动忽略） |
+| 「https://xxx/#/zh-CN/」 | `TARGET_URL` | 网页项目写入环境 `URL` 变量（平台只接受 origin，hash/路径自动忽略）；桌面应用项目不用 |
+| 「Windows 桌面应用」「电脑桌面 Windows」「windows 项目」「XX 客户端」 | `TARGET_TYPE=windows` | 建项目传 `targetType:'windows'`；强制本地 runner、接入命令带 `--target-type windows`；被测应用名/路径写进用例入口，不写 URL |
+| 「macOS 桌面应用」「Mac 客户端」 | `TARGET_TYPE=computer` | 同上，桌面端走本地 runner；命令带 `--target-type computer` |
+| 「安卓 App / android 项目」 | `TARGET_TYPE=android` | 本地 runner；命令带 `--target-type android` |
 | 「testrun222 环境」 | `ENV_NAME` | 按 name/key 复用已有环境，找不到才新建 |
 | 「主干系统项目」 | `PROJECT_NAME` | 按 name 复用已有项目，找不到才新建 |
 | 「初始化 10 条」 | `COUNT` | 用例数量上限 |
@@ -83,6 +88,7 @@ Content-Type: application/json
 
 **缺省规则**：
 
+- **项目类型**：用户没说 → `web`（网页，缺省走原来的内外网判定）；明确说了桌面/移动端 → 对应 `targetType`（windows/computer/android），跳过内外网判定、强制本地 runner。用户给的头像是被测系统登录态令牌时仍按 COOKIE 处理，与项目类型无关。
 - **数量按积分动态定量**（规则见下节「数量决策」）：用户没给数量 → 先查积分余额算出本次生成条数 N；用户显式给了数量 → 以用户为准。**任何情况单次批量硬上限 100 条**。
 - **层级**：没给层级 → 以核心层为主；给了层级（核心/冒烟/全量）→ 按指定层生成。数量 N 与层级共同决定生成范围。
 - 三批门禁（冒烟 ⊂ 核心 ⊂ 全量）只决定**执行顺序与筛选视图**，不改变池的总量 N；给了数量/层级就只做指定范围，不自作主张跑三批。
@@ -118,9 +124,18 @@ Content-Type: application/json
 ### 阶段 1 — 文档解析
 读 `DOC`，抽取三样东西写成 `output/<run>/spec.md`：① 功能点清单（每条可独立验证）；② 入口路径（`/path`，不写域名）；③ 关键可见文案（按钮/标题/提示原文）。文档里查不到的标「待实地确认」——**注意：这里不靠 skill 开浏览器确认，而是先按文档写用例，靠阶段 5 的平台执行结果来校正**。文档与平台跑出来的真实行为不符时以真实行为为准，差异记入 `changes.md`。
 
-### 阶段 2a — 网络可达性判定：内网项目还是公网项目（决定 runner 走法）
+### 阶段 2a — 项目类型与网络可达性判定（决定 runner 走法）
 
-**为什么要判**：云 runner 在公网，**访问不到内网/私网地址**（如 `192.168.*`、`10.*`、企业内网域名、仅 VPN 可达的域名）。若被测站点是内网项目却用云 runner，所有用例会在导航阶段超时失败。所以建工程后、执行前必须先判一次，据此决定用本地 runner 还是云 runner。分三步：**① 明显内网地址直接短路 → ② 其余地址才探活 → ③ 内网处理先查在线本地机**。
+**先看项目类型 `TARGET_TYPE`（阶段 2 建项目时就要传 `targetType`）**——这一步决定后面要不要探活：
+
+| 项目类型 `targetType` | 被测对象 | 执行落点 | 是否做内外网探活 | 接入命令 |
+|---|---|---|---|---|
+| `web`（缺省） | 网页站点 | 公网→云 runner / 内网→本地 runner | **要**（下方三步） | `npx aitestuirunner join --url https://aitestui.com/api --token <token>`（不带 `--target-type`，默认 web） |
+| `windows` / `computer` / `android` | 桌面原生 App / 安卓 App | **一律本地 runner**（服务端强制 local，传 cloud 无效） | **不要**——没有站点 URL，探活无意义 | `npx aitestuirunner join --url https://aitestui.com/api --token <token> --target-type windows`（按项目类型换成 computer/android） |
+
+**非 web 项目**：跳过下方全部探活步骤，直接进「步骤 3 本地 runner 处理」，但要额外确认在线本地机的**目标端能力匹配**——Windows 项目必须有一台声明 `windows` 能力的 runner（派单按 `capabilities.targetType` **严格相等**，Mac runner 领不到 Windows 单；没有匹配机则 attempt 一直 `queued` 到超时报「缺 windows 能力执行端」）。`runners/index` 列表**不返回 targetType**（该字段只在心跳里），所以**无法从 API 确认目标端是否匹配**——只能靠接入命令带了正确的 `--target-type`，再以阶段 5 执行时 `attempts[]` 的状态/日志为准（一直 queued + 「等待目标端匹配」就是没装对能力的机）。
+
+**web 项目才做下面的内外网判定**：云 runner 在公网，**访问不到内网/私网地址**（如 `192.168.*`、`10.*`、企业内网域名、仅 VPN 可达的域名）。若被测站点是内网项目却用云 runner，所有用例会在导航阶段超时失败。所以建工程后、执行前必须先判一次，据此决定用本地 runner 还是云 runner。分三步：**① 明显内网地址直接短路 → ② 其余地址才探活 → ③ 内网处理先查在线本地机**。
 
 **步骤 1 — 明显内网地址直接短路（跳过探活）**
 
@@ -170,24 +185,26 @@ Content-Type: application/json
    - 用 `GET /projects/<projectId>/runner-token` 取该项目的 runner 接入 token（平台现有能力，不用用户去页面找）。
    - 告诉用户（示意）：「这个站点是内网地址，云端测试机连不上。需要在**一台能打开该站点的电脑**上安装一个小助手，装一次即可。」给出平台现成的一行命令：
      ```bash
+     # web 项目（内网站点）：不带 --target-type，默认 web
      npx aitestuirunner join --url https://aitestui.com/api --token <runner-token>
      ```
      `--url` 必须是**去掉 `/v1` 的 API 基址**（runner 侧 path 自带 `/v1`，传 `/api/v1` 会拼成 `/api/v1/v1/...`）。`join` 一条龙完成写配置、下载浏览器、自检、常驻启动。
-   - **不要替用户在本机执行 join**——那台机器必须是用户网络里能访问内网的机器，是否装、装在哪由用户决定。
+   - **桌面应用项目（windows/computer/android）必须用带目标端的命令**：`npx aitestuirunner join --url https://aitestui.com/api --token <runner-token> --target-type <windows|computer|android>`。**不带这个参数 runner 会按 web 上报，永远领不到桌面项目的任务**（派单严格相等匹配）；带了对目标端还会跳过 Chromium 安装。
+   - **不要替用户在本机执行 join**——那台机器必须是用户网络里能访问内网/被测应用的机器，是否装、装在哪由用户决定。
 3. **切本地执行偏好**（第 1 条复用了也仍要确认）：`PATCH /projects/<projectId>/execution-settings`，body `{"runnerPreference":"local"}`（见 api-contract）。这样触发执行时才会派给本地 runner；**不切的话本地 runner 报 `project_preference_cloud` 告警、领不到任务**。
 4. **确认在线**：再次 `GET /runners/index?projectId=<>&pageSize=100` 确认有 `online=1` 的本地 runner（新装的通常几十秒内上线）；确认后再进入阶段 3。
-5. 若用户暂时无法安装 → 记录到 `summary.md` 的阻塞项，用大白话说明「没有本地助手，这批内网用例跑不了」，暂停后续执行阶段，等用户装好再继续。
+5. 若用户暂时无法安装 → 记录到 `summary.md` 的阻塞项，用大白话说明「没有本地助手，这批用例跑不了」，暂停后续执行阶段，等用户装好再继续。
 
-公网项目则跳过本步骤 3，直接进入阶段 2。
+公网 web 项目则跳过本步骤 3，直接进入阶段 2；桌面应用项目本就是本地 runner，走完步骤 3（含目标端匹配确认）再进阶段 2。
 
 ### 阶段 2 — 接入准备：建工程 + 配变量（全 API，无需浏览器）
 
 按 `references/api-contract.md` 串现有端点（全部带 PAT 的 Bearer 头）：
 
-1. **项目**：给项目名 → `GET /projects/index` 按 name 匹配复用；没有 → `POST /projects/add`。给了 id 直接用。
+1. **项目**：给项目名 → `GET /projects/index` 按 name 匹配复用；没有 → `POST /projects/add`。给了 id 直接用。**建项目时按 `TARGET_TYPE` 传 `targetType`**（不传默认 web）：windows/computer/android 等桌面/移动端项目必须显式传对应值；服务端对非 web 端会**强制 `runnerPreference='local'`**（传 cloud 也无效），无需 skill 再去切偏好。复用已有项目时若其 `targetType` 与本次不符，可用 `PUT /projects/edit`（body 带 `id`+`targetType`）改；服务端会把非 web 端的偏好强制收敛到 local。改目标端属于修改用户现有项目配置，**操作前先问用户确认**，不要悄悄改。
 2. **环境**：给环境名（testrun222）→ `GET /project-envs/index?projectId=` 按 name/key 匹配复用；没有 → `POST /project-envs/add`。
 3. **变量**：
-   - `URL`：新建环境预填的空行用 `POST /project-env-vars/batch` 写入（batch 只碰非保密变量）；
+   - `URL`：仅 **web 项目**写——新建环境预填的空行用 `POST /project-env-vars/batch` 写入（batch 只碰非保密变量）。**桌面应用项目没有站点，不写 `URL` 变量**，被测应用名/路径写在用例入口步骤里。
    - `USERNAME` / `PASSWORD` / `COOKIE` 是环境级 **secret 变量**：先 `GET /project-env-vars/index?projectId=&envId=&name=USERNAME` 拿到预填空行的 `id`，再用 `PUT /project-env-vars/edit`（带 `id`、`projectId`、`type:'secret'`、`value`）逐条写入。**secret 值禁止放进 batch**（会被整批 400 拒绝）。
 4. **分支**：`GET /project-branches/default?projectId=` 取 `branchId`。
 
@@ -200,8 +217,11 @@ Content-Type: application/json
 - `format='prompt'`，自然语言全文放 `promptContent`，严格套用 `references/case-rules.md` 的 10 条硬约束；
 - `code` 由标题生成稳定大写编码（`^[A-Z][A-Z0-9_]{1,127}$`）；
 - `tags` 是**字符串数组**，如 `["冒烟","核心"]`，打 `冒烟`/`核心`/`负向` 分层标签（三批是同一池的筛选视图：冒烟 ⊂ 核心 ⊂ 全量）。**不要写成 `"冒烟,核心"` 逗号字符串**——那是 XLSX 模板单元格的格式，平台前端会自动切分，而本 skill 直接 POST 的 JSON 不会，传字符串会被导入接口拒绝；
+- **入口写法按项目类型分**：
+  - **web 项目**：入口只写 `/path`，不写域名（域名在 `URL` 变量里）；
+  - **桌面应用项目（windows/computer/android）**：没有 URL，入口写**被测应用的可启动标识**——应用名或可执行文件路径（如 `打开「XX 客户端」` 或 `打开 C:\Program Files\XX\XX.exe`），由 runner 的桌面会话负责启动；不写 `http(s)://`、不写 `/path`。应用标识从手册或用户给的「应用名」参数取。
 - **登录处理**：阶段 2 已配好登录态变量时，按手册规则"配了 COOKIE 免登录就不写登录步骤"；只有账号密码时，需要登录的用例写 `输入 ${USERNAME}` / `输入 ${PASSWORD}` 占位步骤；
-- **入口只写 `/path`**，不写域名（域名在 `URL` 变量里）；负向用例断言写「系统正确拒绝/提示」。
+- **负向用例断言写「系统正确拒绝/提示」**。
 
 **按数量决策 + 调用参数收敛范围**：层级按用户指定（没指定以核心为主）；**生成总数 N** = 用户显式数量优先，否则用「数量决策」按积分余额算出的 N（10~100 硬顶）。「10 条核心」= 只生成核心层 10 条。生成后跑 `node scripts/case-lint.mjs <pool.json>` 静态校验，不过的先自修。
 
@@ -217,7 +237,7 @@ Content-Type: application/json
 
 按数量决策 + 调用参数决定的范围执行：默认 **冒烟 → 核心 → 全量** 串行门禁；用户指定则**只跑指定范围**（「10 条核心」只跑这 10 条）。**单批执行任务 ≤ 50 条**：某层用例数 > 50 时，拆成多个子任务（每批 ≤ 50）串行触发 `batch-run`，一批全过再下一批——长任务失败归因慢、收益低。每批子流程：
 
-1. **触发执行**：`POST /test-runs/batch-run`，body `{"projectId","branchId","caseIds":[...],"environmentId":?,"name":"<批次名>"}` → `{id}`（runId）。单条调试用 `POST /test-runs/run`（`testCaseId`）。**不传 `runnerPreference`**，让项目偏好生效（强传冲突偏好会被 422 拒绝）。local 模式须有在线且匹配的 runner，否则队列超时。
+1. **触发执行**：`POST /test-runs/batch-run`，body `{"projectId","branchId","caseIds":[...],"environmentId":?,"name":"<批次名>"}` → `{id}`（runId）。单条调试用 `POST /test-runs/run`（`testCaseId`）。**不传 `runnerPreference`**，让项目偏好生效（强传冲突偏好会被 422 拒绝）。local 模式须有在线且**目标端能力匹配**的 runner，否则队列超时。桌面项目若一批长时间 `queued`，先看 `attempts[].errorMessage` 是否有「等待目标端匹配 / 缺 windows 能力执行端」——是则本地 runner 没带对 `--target-type`，引导用户重装，别改用例。
 2. **轮询终态**：`GET /test-runs/get?id=<runId>` 看 `data.status`（终态 `passed|failed|cancelled`）。退避轮询 + 总超时（30 分钟），超时标 `needs_human`。`data.attempts[]` 每条有 `id`（= attemptId）、`caseId`、`runnerType`、`runnerUuid`、`status`、`errorCode`、`errorMessage`、`failurePhase`、`resultSummary`——**用例级 pass/fail、失败原因、日志寻址的第一真相源**。
 3. **读日志与报告**（失败归因必做，细节见 api-contract）：
    - **local（默认）**：从 `attempts[]` 按 `caseId` 取 attemptId，核对 `runnerType/runnerUuid`；直读 `<LOCAL_RUNNER_ROOT>/.h5qa-runs/<runId>-<attemptId>/` 下的 `log/*.log`（优先 `ai-call.log`、`planning.log`）和 `report/` 最新 `*.html`。重跑产生新 runId，绝不复用。日志 3 天保留、未脱敏，外发前脱敏。
@@ -270,8 +290,9 @@ Content-Type: application/json
 
 ## 硬边界
 
-- **只用 aitestui 能力，skill 不自己开浏览器访问/登录被测站点、不识别验证码、不本地执行用例**；打开页面、登录、断言、出报告全是平台 runner 的事。
-- **网络探活是唯一例外**：明显私网地址（localhost/127./10./172.16-31./192.168./169.254./::1 等）**直接判内网、跳过探活**；其余地址才允许两条 curl（本地直连 + 平台 `/proxy`）判定，只取 HTTP 连通性，不登录、不断言、不看页面内容。判为内网先查 `runners/index` 有无在线本地机——有就复用，没有才切项目偏好到 local 并引导用户在其内网机器装本地 runner；不替用户执行 join、不猜测网络。
+- **只用 aitestui 能力，skill 不自己开浏览器访问/登录被测站点、不识别验证码、不本地执行用例**；打开页面/启动应用、登录、断言、出报告全是平台 runner 的事。
+- **项目类型先判对**：缺省 web；桌面/移动项目（windows/computer/android）建项目时显式传 `targetType`，服务端强制 local。桌面项目不做网络探活、不写 URL 变量，入口写应用名/路径而非 `/path`。接入命令必须带**与项目类型一致的 `--target-type`**——不带 runner 会按 web 上报、领不到桌面任务；派单严格相等匹配，Mac runner 领不到 Windows 单。
+- **网络探活是唯一例外，且只对 web 项目**：web 明显私网地址（localhost/127./10./172.16-31./192.168./169.254./::1 等）**直接判内网、跳过探活**；其余 web 地址才允许两条 curl（本地直连 + 平台 `/proxy`）判定，只取 HTTP 连通性，不登录、不断言、不看页面内容。判为内网先查 `runners/index` 有无在线本地机——有就复用，没有才切项目偏好到 local 并引导用户在其内网机器装本地 runner；不替用户执行 join、不猜测网络。桌面/移动项目跳过整段探活。
 - **平台身份用用户给的 PAT，Bearer 直调 API**；不引导浏览器登录平台、不读 runner/.env、不做探索式探测。
 - **登录态走平台 secret 变量 API**（单条 add/edit 支持 secret，batch 不支持）；凭据不进用例、不进产物、不回显、不外发。
 - **不改平台代码、不改平台接口**；改造需求只记录到 `changes.md`。

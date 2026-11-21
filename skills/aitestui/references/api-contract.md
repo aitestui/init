@@ -58,10 +58,14 @@ Content-Type: application/json
 
 **兜底**：本地目录读不到且云 `artifacts` 无 `runner-log`，且 `errorMessage` 也空 → **不得猜着改用例**，标 `needs_human`。
 
-### 5) runner 调度与 runnerPreference（决定谁执行，进而决定日志在哪）
-- 项目级真源是 `project.runner_preference`（`local`/`cloud`）；新建 web 项目默认 `cloud`，computer/android 默认 `local`。
+### 5) runner 调度、runnerPreference 与目标端匹配（决定谁执行，进而决定日志在哪）
+- 项目级真源是 `project.runner_preference`（`local`/`cloud`）；**新建 web 项目默认 `cloud`，非 web 端（windows/computer/android/ios）一律强制 `local`**（`projects.service.ts` add/edit 都收敛），传 cloud 无效。
+- `targetType` 五值：`web`（默认，网页）/ `android` / `ios`（预留，runner 未实现，执行报 `unsupported_target`）/ `computer`（macOS 桌面原生 App）/ `windows`（Windows 桌面原生 App）。界面名「项目类型」即此字段。**「项目类型」与宿主 OS 正交**——Windows 宿主上也能跑 web 项目，只有声明 `windows` 的才是「测 Windows 桌面应用」。
+- **派单按目标端严格相等匹配**：runner 心跳上报 `capabilities.targetType`，平台只把它派给 `targetType` 相等的项目。Mac runner 领不到 Windows 单；没有匹配且在线的执行机时 attempt 保持 `queued` 直到超时、报「缺 windows 能力执行端」，不翻转云（ADR-0024）。
+- **`runners/index` 不返回 `targetType`**（`qa_runner` 表无此列，只在心跳里）——API 无法确认某台在线机是否为目标端能力。只能靠：接入命令带对 `--target-type`，再以执行时 `attempts[].errorMessage` 的「等待目标端匹配：项目要求 X，本执行机为 Y」为准判断是否装对。
+- `POST /projects/<id>/runner-token` 取 token；接入命令 `npx aitestuirunner join --url https://aitestui.com/api --token <token> [--target-type <web|android|computer|windows>]`——web 可省略（默认 web），**桌面/移动项目必须带对应值，否则按 web 上报、永远领不到任务**。桌面端 join 自动跳过 Chromium 安装。执行日常用 `npx aitestuirunner start`。
 - 触发执行时的 `runnerPreference` 入参覆盖项目偏好，但受**死锁矩阵**：cloud 项目传 `local`、local 项目传 `cloud` 都返回 422。所以 skill 一般**不传**，让项目偏好生效；只有用户明确要求且项目偏好一致时才传。
-- local 任务只被 `authentication.type==='local'` 且项目匹配的在线 runner 认领；无人认领则队列超时（云兜底翻转已删除）。**本地模式要先确认有 local runner 在线**。
+- local 任务只被 `authentication.type==='local'` 且项目/目标端匹配的在线 runner 认领；无人认领则队列超时。**本地模式要先确认有目标端匹配、在线的 local runner**。
 - 云执行时日志只在云端 OSS，本地 `.h5qa-runs` 无目录——这正是 `RUNNER_MODE` 要与 `attempt.runnerType` 对齐校验的原因。
 
 ### 6) 执行模型（平台侧，全自动）
@@ -86,7 +90,8 @@ N = 用户显式数量 ? min(100, 用户数量)
 | 目标 | 端点 | 要点 |
 |---|---|---|
 | 找项目 | `GET /projects/index` | 返回 `data.rows[]`，按 `name` 匹配；命中取 `id` 复用。用户直接给 id 则跳过 |
-| 建项目 | `POST /projects/add` | 没命中时；必填仅 `name`；`targetUrl`/`targetType`/`runnerPreference` 可空（默认 web/cloud） |
+| 建项目 | `POST /projects/add` | 必填仅 `name`；`targetUrl`/`targetType`/`runnerPreference`/`webFormFactor` 可空。`targetType` 五值 `web`(默认)/`android`/`ios`/`computer`/`windows`；**非 web 端服务端强制 `runnerPreference='local'`**（传 cloud 无效），`webFormFactor` 仅 web 有效 |
+| 改项目（含换目标端） | `PUT /projects/edit` | body 带 `id` + 要改的字段（含 `targetType`）；改后非 web 端同样收敛 local。改现有项目类型属用户配置变更，先问用户确认 |
 | 找环境 | `GET /project-envs/index?projectId=<>` | 返回 `data.rows[]`（`{id,key,name,...}`），按 `name` 或 `key` 匹配，命中取 `id` 复用 |
 | 建环境 | `POST /project-envs/add` | 没命中时；必填 `projectId`/`key`/`name`；域名不是环境字段，写进 `URL` 变量 |
 | 写普通变量（如 URL） | `POST /project-env-vars/batch` | 整批原子 upsert，行只带 `name`+`value`，定位键 `(scope,envId,name)`，上限 500；**不碰保密变量**（碰了整批 400） |
@@ -104,11 +109,11 @@ N = 用户显式数量 ? min(100, 用户数量)
 
 **绝不需要**：开浏览器登录平台、识别验证码、在平台前端代填。这些都基于过时的"保密变量 API 写不了"的错误结论——那是错的。复用已有项目/环境时**不清空已有配置**，变量写入只覆盖本次用户明确给的那几行；导入用例是覆盖语义（见下）。
 
-## 网络可达性判定与 runner 部署（阶段 2a）
+## 网络可达性判定与 runner 部署（阶段 2a，仅 web 项目）
 
-云 runner 在公网，访问不到内网/私网地址；内网项目必须走本地 runner。
+云 runner 在公网，访问不到内网/私网地址；内网 web 项目必须走本地 runner。**这套探活只对 `targetType='web'` 有意义**——桌面/移动项目（windows/computer/android）没有站点 URL、服务端强制 local，跳过整段判定直接走本地 runner 部署（但接入命令要带 `--target-type`，见「runner 调度」节）。
 
-**先短路明显内网地址**：取 `TARGET_HOST` 的 host，命中 `localhost` / `127.*` / `10.*` / `172.16.*–172.31.*` / `192.168.*` / `169.254.*` / IPv6 `::1`、`fc00::/7`、`fe80::/10`，或 `*.local`/`*.internal`/`*.lan` 后缀 → **直接判内网，不做下面的探活**（私网地址公网必然不可达，探活浪费且受用户是否连 VPN 干扰会误判），直接去查 `GET /runners/index?projectId=<>&pageSize=100` 有无 `online=1` 的本地机。其余地址才做下面两条 curl 探活。
+**web 项目先短路明显内网地址**：取 `TARGET_HOST` 的 host，命中 `localhost` / `127.*` / `10.*` / `172.16.*–172.31.*` / `192.168.*` / `169.254.*` / IPv6 `::1`、`fc00::/7`、`fe80::/10`，或 `*.local`/`*.internal`/`*.lan` 后缀 → **直接判内网，不做下面的探活**（私网地址公网必然不可达，探活浪费且受用户是否连 VPN 干扰会误判），直接去查 `GET /runners/index?projectId=<>&pageSize=100` 有无 `online=1` 的本地机。其余地址才做下面两条 curl 探活。
 
 两条 curl 判定（从 skill 所在机器发起）：
 
@@ -139,7 +144,7 @@ curl -sS --max-time 10 \
 | 切本地执行偏好 | `PATCH /projects/<projectId>/execution-settings` | body `{"runnerPreference":"local"}`；不切则本地 runner 报 `project_preference_cloud` 领不到任务。仅 `local\|cloud` 两值 |
 | 确认 runner 上线 | `GET /runners/index?projectId=<>&pageSize=100` | 列表项 `online=1` / `status` / `lastHeartbeatAt`（心跳驱动）；公网项目无需此步 |
 
-**引导用户装本地 runner**：给出平台现成命令 `npx aitestuirunner join --url https://aitestui.com/api --token <runner-token>`——`--url` 是**去掉 `/v1` 的 API 基址**（runner path 自带 `/v1`，传 `/api/v1` 会拼成 `/api/v1/v1/...`）。`join` 自动写配置 + 装 Chromium + 自检 + 常驻启动；之后每天只需 `npx aitestuirunner start`。**是否装、装在哪台机器由用户决定**（必须是能访问内网的那台），skill 不替用户在本机执行 join。装完轮询 `runners/index` 确认在线再继续。
+**引导用户装本地 runner**：给出平台现成命令 `npx aitestuirunner join --url https://aitestui.com/api --token <runner-token>`（web 项目缺省目标端）；`--url` 是**去掉 `/v1` 的 API 基址**（runner path 自带 `/v1`，传 `/api/v1` 会拼成 `/api/v1/v1/...`）。**桌面/移动项目必须追加 `--target-type <windows|computer|android>`**，否则 runner 按 web 上报、永远领不到任务。`join` 自动写配置 + 装 Chromium（桌面端跳过）+ 自检 + 常驻启动；之后每天只需 `npx aitestuirunner start`。**是否装、装在哪台机器由用户决定**（必须是能访问内网/被测应用的那台），skill 不替用户在本机执行 join。装完轮询 `runners/index` 确认在线再继续。
 
 ## 灌入用例（阶段 4）
 
