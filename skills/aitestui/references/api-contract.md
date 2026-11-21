@@ -67,8 +67,17 @@ Content-Type: application/json
 ### 6) 执行模型（平台侧，全自动）
 runner 从平台拿模型配置。**触发执行时不传 `modelRef`，走平台默认解析链**——不需要向用户要模型配置，也不需要 skill 查/配模型。文档→用例、失败→改用例由执行本 skill 的 AI 自己完成（它本身就是 LLM），无外部生成模型参数。family 兼容性与平台默认配置由平台负责。
 
-### 7) 成本
+### 7) 成本与按余额定量
 每次入队判积分余额 ≥ 1，结算按实际消耗扣（无冻结、可扣负）。余额不足 attempt 落 `errorCode=user_credits_insufficient`。三批 + 反复重跑持续扣费——熔断（同 code 3 次）是成本护栏。
+
+**查余额定生成数量**：`GET /credits/me` → `data.balance`（当前 PAT 用户的积分数，number；同包返回 `nearestExpiresAt`/`nearestExpiringCredits` 到期信息，定量用不到）。源码 `credits.controller.ts`。生成开始时查一次即可：
+
+```
+N = 用户显式数量 ? min(100, 用户数量)
+  : min(100, 10 + floor(balance / 500) * 10)
+```
+
+余额 <500 → 10 条；每多 500 多 10 条；单次硬顶 100；单执行任务 ≤ 50 条（超了拆多个 batch-run 串行）。查询失败（`code≠200` / balance 非数字）→ 兜底 10 条、记入 summary、不阻塞。`balance<1` 提示积分不足但照常生成用例。
 
 ## 接入准备（先按名复用，找不到再新建）
 
