@@ -106,7 +106,11 @@ N = 用户显式数量 ? min(100, 用户数量)
 
 ## 网络可达性判定与 runner 部署（阶段 2a）
 
-云 runner 在公网，访问不到内网/私网地址；内网项目必须走本地 runner。建工程后、执行前先用两条 curl 判定（从 skill 所在机器发起）：
+云 runner 在公网，访问不到内网/私网地址；内网项目必须走本地 runner。
+
+**先短路明显内网地址**：取 `TARGET_HOST` 的 host，命中 `localhost` / `127.*` / `10.*` / `172.16.*–172.31.*` / `192.168.*` / `169.254.*` / IPv6 `::1`、`fc00::/7`、`fe80::/10`，或 `*.local`/`*.internal`/`*.lan` 后缀 → **直接判内网，不做下面的探活**（私网地址公网必然不可达，探活浪费且受用户是否连 VPN 干扰会误判），直接去查 `GET /runners/index?projectId=<>&pageSize=100` 有无 `online=1` 的本地机。其余地址才做下面两条 curl 探活。
+
+两条 curl 判定（从 skill 所在机器发起）：
 
 ```bash
 # 1) 本地视角：TARGET_HOST = 站点 origin（scheme://host[:port]，去掉 hash/路径）
@@ -125,7 +129,7 @@ curl -sS --max-time 10 \
 - nginx 行为：`proxy_pass $arg_url`；**清空上游 Cookie**（`proxy_set_header Cookie ""`）、固定 UA `Nginx-Checker/1.0`、连接/发送/读取均 5s 超时、不回写上游 Set-Cookie。即纯探活，不会登录被测系统。
 - 响应解读：拿到目标站点返回的任意 HTTP 码（含 401/403/500）＝云端**可达**；403/502/504（来自 nginx 且 body 是 Missing cookie/Bad Gateway/Gateway Timeout）、连接失败、超时无响应＝云端**不可达**。区分 nginx 的 403（body `Missing cookie h5qa_sid`）与目标站点自己的 403（业务页面）。
 
-**判定矩阵**：本地通 + 云端通 → 公网（默认云 runner）；本地通 + 云端不通 → 内网（切 local + 引导装本地 runner）；本地不通 → 地址/本机网络问题，停下问用户。
+**判定矩阵**：本地通 + 云端通 → 公网（默认云 runner）；本地通 + 云端不通 → 内网；本地不通 → 地址/本机网络问题，停下问用户。**判为内网后**（含上面短路的私网地址）：先 `GET /runners/index?projectId=<>&pageSize=100` 查有无 `online=1` 本地机——有就复用、切 local 后直接继续；没有才切 local + 引导用户装本地 runner。
 
 **内网项目要串的三个端点**（均带 PAT Bearer）：
 
