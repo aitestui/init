@@ -61,7 +61,7 @@ Content-Type: application/json
 ### 5) runner 调度、runnerPreference 与目标端匹配（决定谁执行，进而决定日志在哪）
 - 项目级真源是 `project.runner_preference`（`local`/`cloud`）；**新建 web 项目默认 `cloud`，非 web 端（windows/computer/android/ios）一律强制 `local`**（`projects.service.ts` add/edit 都收敛），传 cloud 无效。
 - `targetType` 五值：`web`（默认，网页）/ `android` / `ios`（预留，runner 未实现，执行报 `unsupported_target`）/ `computer`（macOS 桌面原生 App）/ `windows`（Windows 桌面原生 App）。界面名「项目类型」即此字段。**「项目类型」与宿主 OS 正交**——Windows 宿主上也能跑 web 项目，只有声明 `windows` 的才是「测 Windows 桌面应用」。
-- **派单按目标端严格相等匹配**：runner 心跳上报 `capabilities.targetType`，平台只把它派给 `targetType` 相等的项目。Mac runner 领不到 Windows 单；没有匹配且在线的执行机时 attempt 保持 `queued` 直到超时、报「缺 windows 能力执行端」，不翻转云（ADR-0024）。
+- **派单按目标端严格相等匹配**：runner 心跳上报 `capabilities.targetType`，平台只把它派给 `targetType` 相等的项目。Mac runner 领不到 Windows 单；没有匹配且在线的执行机时 attempt 保持 `queued` 直到超时、报「缺 windows 能力执行端」，不翻转云。
 - **`runners/index` 不返回 `targetType`**（`qa_runner` 表无此列，只在心跳里）——API 无法确认某台在线机是否为目标端能力。只能靠：接入命令带对 `--target-type`，再以执行时 `attempts[].errorMessage` 的「等待目标端匹配：项目要求 X，本执行机为 Y」为准判断是否装对。
 - `POST /projects/<id>/runner-token` 取 token；接入命令 `npx aitestuirunner join --url https://aitestui.com/api --token <token> [--target-type <web|android|computer|windows>]`——web 可省略（默认 web），**桌面/移动项目必须带对应值，否则按 web 上报、永远领不到任务**。桌面端 join 自动跳过 Chromium 安装。执行日常用 `npx aitestuirunner start`。
 - 触发执行时的 `runnerPreference` 入参覆盖项目偏好，但受**死锁矩阵**：cloud 项目传 `local`、local 项目传 `cloud` 都返回 422。所以 skill 一般**不传**，让项目偏好生效；只有用户明确要求且项目偏好一致时才传。
@@ -108,6 +108,30 @@ N = 用户显式数量 ? min(100, 用户数量)
 4. 值与令牌只在请求体里出现，不写日志、不写产物、不回显。
 
 **绝不需要**：开浏览器登录平台、识别验证码、在平台前端代填。这些都基于过时的"保密变量 API 写不了"的错误结论——那是错的。复用已有项目/环境时**不清空已有配置**，变量写入只覆盖本次用户明确给的那几行；导入用例是覆盖语义（见下）。
+
+## 附件变量（上传类测试用；skill 默认不自主配置）
+
+变量按值来源分**文本变量**与**附件变量**两类，互不转换。附件变量的值不在 `value` 列，而是指向一个 OSS 文件，用例里仍用 `${NAME}` 引用。
+
+| 目标 | 端点 | 要点 |
+|---|---|---|
+| 新建附件变量 | `POST /project-env-vars/attachment/create` | **multipart/form-data**，字段 `projectId`(int)、`scope`(`project`\|`environment`)、`envId`(environment 必填)、`name`、`description?`、`group?`、`file`。一次只能一个文件 |
+| 换文件 | `PUT /project-env-vars/attachment/replace` | multipart，字段 `projectId`、`id`(=变量行 id)、`file`；落新对象并删旧 |
+| 列表回显 | `GET /project-env-vars/index` | 附件行 `value` 为空，带 `fileId` 与 `attachment:{uri,originalName,size}`；不是"没配值" |
+| 解析 | `GET /project-env-vars/resolve` | 附件项回 `{type:'string',value:null,attachment:{...}}`；**不回读文件内容** |
+
+**限制（写侧强校验，别猜）**：
+- 白名单：图片 `png/jpg/jpeg/webp/gif` + 文档 `xlsx/xls/docx/doc/pdf/csv/txt/json`；**MIME 与扩展名必须互相匹配**（防伪装）；单文件 **≤ 2MB**；原文件名 ≤ 200 字符。
+- 变量名**不能**是浏览器态名（`COOKIE` / `localStorage.*` / `sessionStorage.*`）；附件变量**不做保密**、不能改成 secret，也不能与文本变量互转（要换只能删了重建）。
+- **批量接口不可用**：`POST /project-env-vars/batch` 遇到附件行判脏、整批 400 一行不落。附件只能走上面的单条 multipart 端点。
+- 附件 URL 是**公共可下载的明文 URL**，会出现在快照/日志里——**不要放真正的机密文件**。
+- 覆盖链：环境级附件**整体替换**项目级同名附件；**运行覆盖不支持附件**（命中即忽略并告警）。
+
+**执行期**：runner 在用例执行前把全部附件变量预下载到 attempt 工作目录 `files/` 子目录，落地文件名归一化为 `变量名.原扩展名`；`${NAME}` 插值结果 = **本地文件绝对路径**（不是 URI、不是文件名）。所以用例里写 `上传 ${REPORT}` 即可，不要写死路径/URL。若文件下载失败或对象已不存在，attempt **执行前判失败**、错误码 `variable_file_missing`，**不扣积分**——这是配置/资源问题，不是用例文本问题，别改用例。
+
+**前端配置入口（教用户时用这个）**：项目 → 配置 → 环境与变量（`/projects/<id>/config/env`，项目级在 `/config/var`）→ 新建/编辑变量的单条弹窗 → 「值来源」选 **附件变量** → 选文件上传；列表行有「附件」徽标与下载链接。
+
+> **skill 纪律**：文档只说「支持上传附件」而不给具体文件时，**不猜文件与功能的对应关系**，不替用户上传。只有用户明确给了文件 + 明确说明对应功能 + 无歧义时才走上面端点；否则提示、教会用户配置，或与用户确认对应关系。详见 SKILL.md「附件变量类功能」门禁。
 
 ## 网络可达性判定与 runner 部署（阶段 2a，仅 web 项目）
 

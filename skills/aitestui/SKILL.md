@@ -2,7 +2,7 @@
 name: aitestui
 display_name: aitestui 接入基线用例自动生成
 display_name_en: aitestui Onboarding Baseline Autocase
-description: 为「接入 aitestui 的新系统」从系统手册等文档自动生成接入基线用例集，用平台自身能力完成「识别项目类型 → 建项目/环境 → 配登录态 → 生成用例 → 导入 → 平台执行 → 读日志 → 改用例重跑」全链路。网页项目自动判公网/内网，内网引导装本地 runner；Windows 桌面等非网页项目强制本地 runner。用户提供平台身份令牌 + 一句话参数（文档/站点或应用/环境/数量/层级/被测系统账号密码）即可，AI 全部通过平台 API 驱动，不自己开浏览器。当用户想「根据文档自动写 aitestui 测试用例」「降低用例初始化工作量」「一句话初始化 N 条核心用例」「批量接入系统/铺冒烟用例」「接入内网系统」「接入 Windows 桌面应用」时使用。
+description: 为「接入 aitestui 的新系统」从系统手册等文档自动生成接入基线用例集，用平台自身能力完成「识别项目类型 → 建项目/环境 → 配登录态 → 生成用例 → 导入 → 平台执行 → 读日志 → 改用例重跑」全链路。网页项目自动判公网/内网，内网引导装本地 runner；Windows 桌面等非网页项目强制本地 runner。涉及上传附件的功能不猜测文件用途，先提示/教用户配置或与用户确认。用户提供平台身份令牌 + 一句话参数（文档/站点或应用/环境/数量/层级/被测系统账号密码）即可，AI 全部通过平台 API 驱动，不自己开浏览器。当用户想「根据文档自动写 aitestui 测试用例」「降低用例初始化工作量」「一句话初始化 N 条核心用例」「批量接入系统/铺冒烟用例」「接入内网系统」「接入 Windows 桌面应用」时使用。
 description_zh: 给一份系统手册，自动识别项目类型（网页/Windows 桌面等）、建项目配变量、生成基线测试用例、导入 aitestui、平台执行并按真实日志改用例到全过，最后交付执行总结与截图，大幅降低新系统接入的用例初始化工作量。
 description_en: From a system manual, detect project type (web / Windows desktop), set up project and variables, generate baseline test cases, import to aitestui, run them on the platform and fix cases against real logs until passing, then deliver a summary with screenshots.
 examples_zh:
@@ -13,7 +13,7 @@ examples_en:
 - "My platform token h5qa_xxx, read docs in current directory, initialize 10 core test cases, env testrun222, site https://example.com"
 - "Onboard an intranet system: read the manual, generate baseline cases and run them, site http://10.0.0.10:8080"
 - "Onboard a Windows desktop app: read the manual, initialize 10 core cases, app name XX"
-version: 1.2.0
+version: 1.3.0
 author: aitestui
 ---
 
@@ -74,6 +74,9 @@ Content-Type: application/json
 | 「核心测试用例」「冒烟」「全量含负向」 | `LEVEL` | 生成层级：冒烟 / 核心 / 全量 |
 | 「账号 mahy，密码 1234」 | 被测系统 `USERNAME`/`PASSWORD` | 写成平台环境级 secret 变量 |
 | 「用户身份 token：xxx」（被测站点登录态） | 被测系统 `COOKIE` | 写成平台环境级 secret 变量 |
+| 「用 /path/合同模板.xlsx 测导入合同」（文件 + 对应功能同时给） | `ATTACH_FILE` + `ATTACH_FOR` | 唯一可自主完成附件用例的情形，见「附件变量类功能」门禁；只给文件没给用途、或只给功能没给文件，都不算 |
+
+> **注意**：`DOC`（系统手册/文档目录）和 `ATTACH_FILE`（被测系统要上传的测试附件）是两回事，绝不能混用——手册是用来生成用例的依据，不是被测系统的输入文件。
 
 **用户原话示例及解析**：
 
@@ -120,9 +123,11 @@ Content-Type: application/json
 ## 工作流（严格分阶段，阶段间是门禁）
 
 ### 阶段 1 — 文档解析
-读 `DOC`，抽取三样东西写成 `output/<run>/spec.md`：① 功能点清单（每条可独立验证）；② 入口路径（`/path`，不写域名）；③ 关键可见文案（按钮/标题/提示原文）。文档里查不到的标「待实地确认」——**注意：这里不靠 skill 开浏览器确认，而是先按文档写用例，靠阶段 5 的平台执行结果来校正**。文档与平台跑出来的真实行为不符时以真实行为为准，差异记入 `changes.md`。
+读 `DOC`，抽取四样东西写成 `output/<run>/spec.md`：① 功能点清单（每条可独立验证）；② 入口（web 项目写 `/path` 不写域名；桌面项目写应用名/可执行文件路径）；③ 关键可见文案（按钮/标题/提示原文）；④ **疑似需要附件的功能点**（上传图片/导入 Excel/上传合同等），单列一节，供上面的「附件变量类功能」门禁使用。文档里查不到的标「待实地确认」——**注意：这里不靠 skill 开浏览器确认，而是先按文档写用例，靠阶段 5 的平台执行结果来校正**。文档与平台跑出来的真实行为不符时以真实行为为准，差异记入 `changes.md`。
 
 ### 阶段 2a — 项目类型与网络可达性判定（决定 runner 走法）
+
+> **执行顺序（别按标题编号硬套）**：本阶段的**判定**（项目类型、内外网两条 curl）不需要项目 id，可先做；但步骤 3 查在线机 / 取 runner-token / 切执行偏好都**依赖 `projectId`**。所以真实顺序是：**阶段 2 第 1 步（建/复用项目，拿到 `projectId`）→ 回到本阶段做判定与 runner 部署 → 再回到阶段 2 完成环境、变量、分支**。若还没建项目，先做阶段 2 第 1 步，不要把 `projectId` 留空去调接口。
 
 **先看项目类型 `TARGET_TYPE`（阶段 2 建项目时就要传 `targetType`）**——这一步决定后面要不要探活：
 
@@ -205,7 +210,7 @@ Content-Type: application/json
 
 按 `references/api-contract.md` 串现有端点（全部带 PAT 的 Bearer 头）：
 
-1. **项目**：给项目名 → `GET /projects/index` 按 name 匹配复用；没有 → `POST /projects/add`。给了 id 直接用。**建项目时按 `TARGET_TYPE` 传 `targetType`**（不传默认 web）：windows/computer/android 等桌面/移动端项目必须显式传对应值；服务端对非 web 端会**强制 `runnerPreference='local'`**（传 cloud 也无效），无需 skill 再去切偏好。复用已有项目时若其 `targetType` 与本次不符，可用 `PUT /projects/edit`（body 带 `id`+`targetType`）改；服务端会把非 web 端的偏好强制收敛到 local。改目标端属于修改用户现有项目配置，**操作前先问用户确认**，不要悄悄改。
+1. **项目**（工作流第一步，先做这步拿 `projectId` 供阶段 2a 用）：给项目名 → `GET /projects/index` 按 name 匹配复用；没有 → `POST /projects/add`。给了 id 直接用。**建项目时按 `TARGET_TYPE` 传 `targetType`**（不传默认 web）：windows/computer/android 等桌面/移动端项目必须显式传对应值；服务端对非 web 端会**强制 `runnerPreference='local'`**（传 cloud 也无效），无需 skill 再去切偏好。复用已有项目时若其 `targetType` 与本次不符，可用 `PUT /projects/edit`（body 带 `id`+`targetType`）改；服务端会把非 web 端的偏好强制收敛到 local。改目标端属于修改用户现有项目配置，**操作前先问用户确认**，不要悄悄改。
 2. **环境**：给环境名（testrun222）→ `GET /project-envs/index?projectId=` 按 name/key 匹配复用；没有 → `POST /project-envs/add`。
 3. **变量**：
    - `URL`：仅 **web 项目**写——新建环境预填的空行用 `POST /project-env-vars/batch` 写入（batch 只碰非保密变量）。**桌面应用项目没有站点，不写 `URL` 变量**，被测应用名/路径写在用例入口步骤里。
@@ -213,6 +218,36 @@ Content-Type: application/json
 4. **分支**：`GET /project-branches/default?projectId=` 取 `branchId`。
 
 **复用已有项目/环境时不清空已有配置**；变量写入是覆盖式更新，只动本次用户明确给的那几行。设完即可，不用去浏览器核对。
+
+### 附件变量类功能 — 暂不自主完成（阶段 1/3 门禁）
+
+平台支持**附件变量**（图片/Excel/PDF/Word 等文件，白名单格式、单文件 ≤ 2MB），用例里用 `${VAR}` 引用，执行时 runner 会预下载附件并把 `${VAR}` 插值成本地文件绝对路径。但**「哪个文件该用在哪个功能上」是业务语义**：文档常常只写「支持上传附件」却不给文件，此时 skill 无从判断，猜错就会生成一批跑不通的用例、白烧积分。所以这类功能**默认不自主完成**。
+
+**唯一例外——必须三条同时满足才算「能非常确定文件和对应的功能」**：
+
+1. 用户**明确给出**具体文件路径，或明确说「用当前目录下的 XX.xlsx」；
+2. 用户**明确说明**该文件对应哪个功能/哪条用例；或文档逐字写明「把 XX 模板上传到 YY 功能」，且该文件确实存在、名字与文档一致；
+3. 只有**一个**候选文件，不存在「好几个文件看起来都能用」的歧义。
+
+任一条不满足 → 走下面的「三选一」，不自主完成。
+
+**禁止的猜测行为**（明确列出，别自我说服）：
+
+- ❌ 把用户给的**系统手册/文档目录里的 PDF、DOCX、图片**当成被测系统要上传的测试附件；
+- ❌ 按文件名、扩展名、所在目录推断「这个文件大概是给 XX 功能用的」；
+- ❌ 自己生成/伪造占位文件（空白图片、假 xlsx）去凑上传步骤；
+- ❌ 在多个候选文件里「挑一个看起来最合适的」；
+- ❌ 只因文档写了「支持上传附件」就默认生成上传用例。
+
+**不确定时三选一**（用大白话，一轮问齐，不反复追问、不堆技术词）：
+
+1. **给用户提示**：列出「这些功能需要附件，本批未生成用例」，说明不影响其余用例照常跑；写进 `summary.md` 和阶段 7 收尾。
+2. **教会用户如何做**：告诉用户在平台「项目 → 配置 → 环境/变量 → 新建变量 → 值来源选『附件变量』→ 上传文件」，用例里写 `${变量名}`；说明支持图片（PNG/JPG/WebP/GIF）和文档（Excel/Word/PDF/CSV/TXT/JSON）、单文件不超过 2MB。配好后让用户说一声，skill 用该变量名补生成对应用例。
+3. **跟用户确认文件和功能的对应关系**：把「疑似需要附件的功能点」和「当前可见的候选文件」列出来，问清「哪个文件用于哪个功能」，确认后再继续。
+
+**生成用例时的写法**：附件一律 `${VAR}` 占位（变量名由用户确认或按功能命名，如 `${ATTACH_CONTRACT}`），写 `上传 ${ATTACH_CONTRACT}`，**不写死文件名、绝对路径、URL**。附件变量原则上**由用户在平台配置**，skill 不主动替用户认定文件用途。仅当上述三条判据全满足且用户已授权时，才可用 multipart 端点创建附件变量（契约见 `references/api-contract.md`），并在回复里说明「用了哪个文件、配到了哪个变量」。
+
+**执行阶段**：若日志或 `attempts[].errorCode` 出现 `variable_file_missing` / `missing_variable` 且指向附件变量，这是**附件没配好或文件已失效**（配置问题，执行前判失败、不扣积分），不是用例文本问题——提示用户到平台补传或替换附件，**不要改用例瞎重试**。
 
 ### 阶段 3 — 生成用例（AI 自己写，无需外部模型）
 
@@ -226,6 +261,7 @@ Content-Type: application/json
   - **桌面应用项目（windows/computer/android）**：没有 URL，入口写**被测应用的可启动标识**——应用名或可执行文件路径（如 `打开「XX 客户端」` 或 `打开 C:\Program Files\XX\XX.exe`），由 runner 的桌面会话负责启动；不写 `http(s)://`、不写 `/path`。应用标识从手册或用户给的「应用名」参数取。
 - **登录处理**：阶段 2 已配好登录态变量时，按手册规则"配了 COOKIE 免登录就不写登录步骤"；只有账号密码时，需要登录的用例写 `输入 ${USERNAME}` / `输入 ${PASSWORD}` 占位步骤；
 - **负向用例断言写「系统正确拒绝/提示」**。
+- **涉及上传/导入文件的功能**：先过上面的「附件变量类功能」门禁——未确认的文件↔功能关系一律不生成，确认过的用 `${VAR}` 占位写 `上传 ${VAR}`。
 
 **按数量决策 + 调用参数收敛范围**：层级按用户指定（没指定以核心为主）；**生成总数 N** = 用户显式数量优先，否则用「数量决策」按积分余额算出的 N（10~100 硬顶）。「10 条核心」= 只生成核心层 10 条。生成后跑 `node scripts/case-lint.mjs <pool.json>` 静态校验，不过的先自修。
 
@@ -247,9 +283,10 @@ Content-Type: application/json
    - **local（默认）**：从 `attempts[]` 按 `caseId` 取 attemptId，核对 `runnerType/runnerUuid`；直读 `<LOCAL_RUNNER_ROOT>/.h5qa-runs/<runId>-<attemptId>/` 下的 `log/*.log`（优先 `ai-call.log`、`planning.log`）和 `report/` 最新 `*.html`。重跑产生新 runId，绝不复用。日志 3 天保留、未脱敏，外发前脱敏。
    - **cloud**：`GET /test-runs/<runId>/artifacts` 取 `objectKey`，拼 `https://static.appkc.com/<key>` 拉；`runner-log` 是脱敏失败全程日志，`midscene-report` 是 HTML 报告。
    - 归档到 `output/<run>/runs/<runId>-<attemptId>/`。
-4. **失败 → 归因**（默认系统正常，文档可能落后，只两类）：
-   - (a) **用例问题**：元素描述不视觉化、断言平台判不了、`missing_variable`、`entry_url_unresolvable`、步骤错、登录态失效（`errorCode` 指向变量/登录） → 结合 `errorMessage` 和真实日志改 `promptContent` 或补配变量；
+4. **失败 → 归因**（默认系统正常，文档可能落后，三类）：
+   - (a) **用例问题**：元素描述不视觉化、断言平台判不了、`missing_variable`（附件变量名除外）、`entry_url_unresolvable`、步骤错、登录态失效（`errorCode` 指向变量/登录） → 结合 `errorMessage` 和真实日志改 `promptContent` 或补配变量；
    - (b) **文档落后**：日志显示系统实际行为与文档不符（真实文案/入口不同） → 按真实行为改用例，差异记入 `changes.md`「文档差异」节。
+   - (c) **附件配置问题**：`variable_file_missing`，或 `missing_variable` 指向附件变量名 → **不是用例文本问题**，提示用户到平台补传/替换附件变量（见「附件变量类功能」门禁），**不要改用例瞎重试**。
    **绝不因失败就判「系统有 bug」而挂起**（除非用户另行说明）。日志读不到且 `errorMessage` 也空 → 不得猜着改，标 `needs_human`。
 5. **改完重跑**：改后重新 `POST /test-cases/import`（按 code 覆盖），再 `POST /test-runs/batch-run` 只跑这些 caseIds。循环到通过。
 6. **熔断**：同一 code 连续 3 次修正仍不过 → 标 `needs_human`、写清卡点（runId + errorMessage + 日志路径/URL），跳过继续其他用例；批次有 `needs_human` 就不算全过，暂停报告用户。
@@ -261,7 +298,7 @@ Content-Type: application/json
 
 全部批次结束后，用**大白话**给用户一份收尾消息，包含下面四块，缺一不可：
 
-**① 执行情况总结**：本次接入了多少条用例、分哪几批、通过/失败/转人工各多少、总消耗积分（读 `summary.md` 与各 run 的 `total/passed/failed`）。有 `needs_human` 的如实点出卡点，不掩盖。
+**① 执行情况总结**：本次接入了多少条用例、分哪几批、通过/失败/转人工各多少、总消耗积分（读 `summary.md` 与各 run 的 `total/passed/failed`）。有 `needs_human` 的如实点出卡点，不掩盖；有「因附件未确认而跳过的功能点」一并列出，说明这批用例没覆盖它们。
 
 **② 运行结果截图（三批各一张，来自平台执行产物，不自己截图）**：从**每批**对应的 runId 取 `GET /test-runs/<runId>/artifacts`，筛 `type='screenshot'` 的构件，用其 `objectKey` 拼 `https://static.appkc.com/<objectKey>` 得到被测页面截图 URL。这是 Midscene 执行用例时平台自动截的**被测页面**图，全程 API 拉取，**不自己开浏览器、不自己截图**。要点：
 - 按**实际执行的批次**取：跑了三批就三张（冒烟/核心/全量各一张），只跑一批（如「10 条核心」）就一张，不硬凑三张。
@@ -275,7 +312,7 @@ Content-Type: application/json
 - 用大白话引导："点开确认一下用例和执行结果，看看有没有要调整的。"
 - `<projectId>`/`<runId>` 都是**数字 id**（阶段 2/5 查回来的），不是名字、不是 hash 路由里的占位。
 
-**④ 下一步引导（生成更多用例）**：主动给用户一条继续的路，例如："这批跑通后，可以再让我『基于同一份文档补充负向用例』或『再初始化下一批核心用例』，我会沿用现有项目和环境接着生成。" 有 `changes.md` 文档差异时，顺带提示哪些文档已过时、是否要按真实行为修订。
+**④ 下一步引导（生成更多用例）**：主动给用户一条继续的路，例如："这批跑通后，可以再让我『基于同一份文档补充负向用例』或『再初始化下一批核心用例』，我会沿用现有项目和环境接着生成。" 有 `changes.md` 文档差异时，顺带提示哪些文档已过时、是否要按真实行为修订。**若有待补附件的功能点，这里补一句大白话指引**：告诉用户配好附件后说一声，就能把这批没覆盖的上传/导入类用例补上。
 
 **硬约束**：链接和截图 URL 只来自平台真实返回（artifacts 的 objectKey、查回来的数字 id），**不拼凑、不猜测**；拿不到就如实说明，不编造地址给用户点。
 
@@ -288,7 +325,7 @@ Content-Type: application/json
 | `case-ids.json` | 用例 code → 平台 caseId 映射 |
 | `runs/<runId>-<attemptId>/` | 每次尝试的 attempt 摘要、日志/报告（本地路径或云 URL）、修正历史 |
 | `changes.md` | 文档差异 + 接口/平台改造需求 |
-| `summary.md` | 通过统计、`needs_human` 清单、导入结果、总积分消耗、数量决策、各批截图 URL 与结果链接（最终交付的留痕） |
+| `summary.md` | 通过统计、`needs_human` 清单、导入结果、总积分消耗、数量决策、**待补附件的功能点清单**、各批截图 URL 与结果链接（最终交付的留痕） |
 
 登录态（账号密码/令牌/Cookie）**只在平台变量里加密存储**，skill 侧产物不保存明文凭据。
 
@@ -301,6 +338,7 @@ Content-Type: application/json
 - **登录态走平台 secret 变量 API**（单条 add/edit 支持 secret，batch 不支持）；凭据不进用例、不进产物、不回显、不外发。
 - **不改平台代码、不改平台接口**；改造需求只记录到 `changes.md`。
 - **日志默认直读本地 runner 文件系统（local），云执行走平台 OSS 构件（cloud）**；按 `attempt.runnerType/runnerUuid` 校验对齐。`RUNNER_MODE` 只选日志来源、不改执行落点。
+- **附件变量类功能暂不自主完成**：文档只说「支持上传附件/导入文件」而不给具体文件时，不猜文件与功能的对应关系——不拿手册当附件、不按文件名猜用途、不造假文件、不自己挑候选。除非用户明确给了文件 + 明确说明对应功能 + 无歧义，否则三选一：提示跳过、教用户到平台配置、或跟用户确认对应关系。用例里附件只写 `${VAR}` 占位；`variable_file_missing` 属配置问题，不改用例瞎重试。
 - **失败必读真实日志再归因**；本地日志未脱敏，外发前脱敏；读不到不得猜着改，标 `needs_human`。
 - **失败不判系统 bug**（除非用户明确说），按真实行为改用例到全过；同 code 3 次熔断转人工。
 - **范围按用户指定**：给了数量/层级只做指定范围，缺省才三批全量。
